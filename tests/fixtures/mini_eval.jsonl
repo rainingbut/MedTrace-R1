@@ -1,0 +1,4 @@
+{"id":"medqa_test_fixture_001","benchmark":"medqa","split":"test","question":"Fixture question one?","choices":{"A":"Alpha","B":"Beta","C":"Gamma","D":"Delta"},"answer":"A","mock_output":"Reasoning.\nFinal Answer: A"}
+{"id":"medqa_test_fixture_002","benchmark":"medqa","split":"test","question":"Fixture question two?","choices":{"A":"Alpha","B":"Beta","C":"Gamma","D":"Delta"},"answer":"B","mock_output":"After checking the options, the answer is B."}
+{"id":"medmcqa_validation_fixture_001","benchmark":"medmcqa","split":"validation","question":"Fixture question three?","choices":{"A":"Alpha","B":"Beta","C":"Gamma","D":"Delta"},"answer":"C","mock_output":"Final Answer: C\nFinal Answer: D"}
+{"id":"medmcqa_validation_fixture_002","benchmark":"medmcqa","split":"validation","question":"Fixture question four?","choices":{"A":"Alpha","B":"Beta","C":"Gamma","D":"Delta"},"answer":"D","mock_output":"I cannot determine the answer."}

@@ -1,188 +1,150 @@
-# HuatuoGPT-o1, Towards Medical Complex Reasoning with LLMs
-<div align="center">
-<h3>
-  HuatuoGPT-o1
-</h3>
-</div>
+# MEDTRACE-R1
 
-<p align="center">
-📃 <a href="https://arxiv.org/pdf/2412.18925" target="_blank">Paper</a> ｜🤗 <a href="https://huggingface.co/FreedomIntelligence/HuatuoGPT-o1-7B" target="_blank">HuatuoGPT-o1-7B</a> ｜🤗 <a href="https://huggingface.co/FreedomIntelligence/HuatuoGPT-o1-8B" target="_blank">HuatuoGPT-o1-8B</a> ｜ 🤗 <a href="https://huggingface.co/FreedomIntelligence/HuatuoGPT-o1-70B" target="_blank">HuatuoGPT-o1-70B</a>  | 📚 <a href="https://huggingface.co/datasets/FreedomIntelligence/medical-o1-reasoning-SFT" target="_blank">Data</a>
-</p>
+MEDTRACE-R1 is a personal research project for reproducible medical reasoning
+experiments with `Qwen/Qwen2.5-7B-Instruct`. The planned pipeline covers
+verified chain-of-thought data construction, supervised fine-tuning, process
+reward modelling, GRPO, and selected DAPO mechanisms.
 
+The project is currently at **Stage 0: reproducible baseline evaluation**. No
+SFT, PRM, GRPO, or DAPO result is claimed yet.
 
-## ⚡ Introduction
-Hello! Welcome to the repository for [HuatuoGPT-o1](https://arxiv.org/pdf/2412.18925)!
+> This repository is for research and engineering evaluation only. Model
+> outputs must not be used as medical advice or as a substitute for qualified
+> clinical judgement.
 
-<div align=center>
-<img src="assets/pic1.jpg"  width = "90%" alt="HuatuoGPT-o1" align=center/>
-</div>
+## Current status
 
+| Component | Status |
+|---|---|
+| Git version control | Complete |
+| MedQA/MedMCQA normalisation | Complete |
+| Deterministic answer extraction and metrics | Complete |
+| Local tests and evaluation dry-run | Complete |
+| Qwen2.5-7B-Instruct baseline | Pending GPU run |
+| Verified-CoT SFT | Not started |
+| PRM | Not started |
+| GRPO/DAPO | Not started |
 
-**HuatuoGPT-o1** is a medical LLM designed for advanced medical reasoning. It can identify mistakes, explore alternative strategies, and refine its answers.  By leveraging verifiable medical problems and a specialized medical verifier, it advances reasoning through:
+The detailed roadmap is in
+[`docs/MEDTRACE_R1_IMPLEMENTATION_PLAN.md`](docs/MEDTRACE_R1_IMPLEMENTATION_PLAN.md).
 
-- Using the verifier to guide the search for a complex reasoning trajectory for fine-tuning LLMs.
-- Applying reinforcement learning (PPO) with verifier-based rewards to enhance complex reasoning further.
+## Reproducible evaluation
 
-We open-sourced our models, data, and code here.
+The baseline evaluator uses one fixed answer policy:
 
-## 👨‍⚕️ Model
-- **Model Access**
+- The requested output ends with `Final Answer: X`.
+- Explicit alternatives such as `the answer is X` can be scored, but are not
+  counted as format-valid.
+- Conflicting final answers and invalid option labels are scored as incorrect.
+- Option-text similarity is never used to guess a missing answer.
+- Accuracy, parse rate, and strict format rate are reported separately.
 
-|                      | Backbone     | Supported Languages | Link                                                                  |
-| -------------------- | ------------ | ----- | --------------------------------------------------------------------- |
-| **HuatuoGPT-o1-8B**  | LLaMA-3.1-8B  | English    | [HF Link](https://huggingface.co/FreedomIntelligence/HuatuoGPT-o1-8B) |
-| **HuatuoGPT-o1-70B** | LLaMA-3.1-70B | English    | [HF Link](https://huggingface.co/FreedomIntelligence/HuatuoGPT-o1-70B) |
-| **HuatuoGPT-o1-7B**  | Qwen2.5-7B   | English & Chinese | [HF Link](https://huggingface.co/FreedomIntelligence/HuatuoGPT-o1-7B) |
-| **HuatuoGPT-o1-72B** | Qwen2.5-72B  | English & Chinese | [HF Link](https://huggingface.co/FreedomIntelligence/HuatuoGPT-o1-72B) |
+Default decoding is deterministic (`temperature: 0`, `top_p: 1.0`, seed 42).
+Every run stores its resolved configuration, input hash, Git revision,
+per-question output, latency, parse status, and aggregate metrics.
 
-- **Deploy**
+### 1. Install evaluation dependencies
 
-HuatuoGPT-o1 can be used just like `Llama-3.1-8B-Instruct`. You can deploy it with tools like [vllm](https://github.com/vllm-project/vllm) or [Sglang](https://github.com/sgl-project/sglang),  or perform direct inference:
-```python
-from transformers import AutoModelForCausalLM, AutoTokenizer
-
-model = AutoModelForCausalLM.from_pretrained("FreedomIntelligence/HuatuoGPT-o1-8B",torch_dtype="auto",device_map="auto")
-tokenizer = AutoTokenizer.from_pretrained("FreedomIntelligence/HuatuoGPT-o1-8B")
-
-input_text = "How to stop a cough?"
-messages = [{"role": "user", "content": input_text}]
-
-inputs = tokenizer(tokenizer.apply_chat_template(messages, tokenize=False,add_generation_prompt=True
-), return_tensors="pt").to(model.device)
-outputs = model.generate(**inputs, max_new_tokens=2048)
-print(tokenizer.decode(outputs[0], skip_special_tokens=True))
-```
-
-HuatuoGPT-o1 adopts a *thinks-before-it-answers* approach, with outputs formatted as:
-
-```
-## Thinking
-[Reasoning process]
-
-## Final Response
-[Output]
-```
-
-## 📚 Data
-- **Data Access**
-
-| Data                  | Description                                                                                   | Link                                                                                           |
-| -------------------------- | ----------------------------------------------------------------- | --------------------------------------------------------------------------------------------- |
-| Medical Verifiable Problems | Open-ended medical problems sourced from challenging medical exams,  paired with ground-truth answers. | [Link](https://huggingface.co/datasets/FreedomIntelligence/medical-o1-verifiable-problem)  |
-| SFT Data in Stage 1        | Fine-tuning data generated using GPT-4o, including complex chains of thought (**Complex CoT**) and output (**Response**). | [Link](https://huggingface.co/datasets/FreedomIntelligence/medical-o1-reasoning-SFT)       |
-
-- **Data Construction**
-
-We provide scripts to construct verifiable problems and searching reasoning paths.
-
-**1. Constructing Verifiable Problems from Multi-choice Questions.** 
-```bash
-python construct_verifiable_medical_problems.py --data_path  data/demo_data.json --filter_data --model_name gpt-4o --api_key [your api key]
-```
-**2. Searching Complex Reasoning Paths for SFT**
+Use a dedicated environment rather than the legacy HuatuoGPT-o1 training
+environment:
 
 ```bash
-python search_for_complex_reasoning_path.py --data_path  data/demo_data.json --efficient_search True  --max_search_attempts 1 --max_search_depth 2 --model_name gpt-4o --api_key [your api key]
+python -m pip install -r requirements/eval.txt
 ```
 
-
-## 🚀 Training
-
-- **Stage 1: Supervised Fine-Tuning (SFT)**
-
-Fine-tune the model on an 8-GPU setup:
-```bash
-accelerate launch --config_file ./configs/deepspeed_zero3.yaml \
-    --num_processes 8  \
-    --num_machines 1 \
-    --machine_rank 0 \
-    --deepspeed_multinode_launcher standard SFT_stage1.py \
-    --model_path [meta-llama/Llama-3.1-8B-Instruct] \
-    --data_path [FreedomIntelligence/medical-o1-reasoning-SFT] 
-```
-
-- **Stage 2: Reinforcement Learning (RL)**
-
-We provide a simple PPO script using the [trl](https://github.com/huggingface/trl) library. Below is an example for training an 8B model with PPO on an 8-GPU A100 machine. Ensure you first download our [medical verifier](https://huggingface.co/FreedomIntelligence/medical_o1_verifier_3B) as the reward model.
+### 2. Prepare benchmark files
 
 ```bash
-accelerate launch \
-	--num_processes 8 \
-	--num_machines 1 \
-	--machine_rank 0 \
-    --config_file ./configs/deepspeed_zero3.yaml \
-	--deepspeed_multinode_launcher standard RL_stage2.py \
-    --model_name_or_path [FreedomIntelligence/HuatuoGPT-o1-8B] \
-    --reward_model_path [FreedomIntelligence/medical_o1_verifier_3B] \
-    --value_model_path [meta-llama/Llama-3.2-3B-Instruct] \
-    --dataset_name  [FreedomIntelligence/medical-o1-verifiable-problem]\
-    --response_length 1300 \
-    --temperature 0.5 \
-    --local_rollout_forward_batch_size 8 \
-    --num_ppo_epochs 3 \
-    --num_mini_batches 1 \
-    --total_episodes 20000 \
-    --per_device_train_batch_size 1 \
-    --gradient_accumulation_steps 16 \
-    --bf16 True \
-    --output_dir ./ckpts \
-    --save_strategy steps \
-    --save_step 20 \
-    --save_total_limit 1 \
-    --eval_strategy steps \
-    --eval_steps 20 \
-    --kl_coef 0.03 \
-    --learning_rate 5e-7 \
-    --warmup_ratio 0.05 \
-    --gradient_checkpointing True \
-    --dataloader_num_workers 4 \
-    --run_name ppo_medical_o1_8B \
-    --num_sample_generations -1 \
-    --report_to wandb
+python data_pipeline/prepare_benchmarks.py
 ```
 
-## 🧐 Evaluation
-1. You first need to install [Sglang](https://github.com/sgl-project/sglang). After installation, deploy the model you want to test using Sglang with the following command:
+This deterministically creates:
+
+```text
+data/benchmark/medqa_test.jsonl
+data/benchmark/medmcqa_validation.jsonl
+data/benchmark/medical_mcq_eval.jsonl
+data/benchmark/manifest.json
+```
+
+The generated JSONL files are ignored by Git because they can be reproduced
+from the tracked source snapshot. The manifest records input/output SHA256
+hashes, sample counts, split names, and current provenance status.
+
+### 3. Run local tests
+
 ```bash
-log_num=0
-model_name="FreedomIntelligence/HuatuoGPT-o1-8B" # Path to the model you are deploying
-port=28${log_num}35
-CUDA_VISIBLE_DEVICES=0  python -m sglang.launch_server --model-path $model_name --port $port --mem-fraction-static 0.8 --dp 1 --tp 1  > sglang${log_num}.log 2>&1 &
+python -m unittest discover -s tests -v
 ```
-2. Wait for the model to be deployed. After deployment, you can run the following code for evaluation. We use prompts that allow the model to respond freely. We find that the extracted results are consistently reliable and broadly cover the intended scope. You can also set the `--strict_prompt` option to use stricter prompts for more precise answer extraction.
+
+### 4. Run without a model
+
 ```bash
-python evaluation/eval.py --model_name $model_name  --eval_file evaluation/data/eval_data.json --port $port 
+python evaluation/run_eval.py \
+  --config configs/eval/qwen2_5_7b_instruct.yaml \
+  --input-file tests/fixtures/mini_eval.jsonl \
+  --dry-run
 ```
-3. After completing the evaluation, run the following code to stop the Sglang service and release GPU memory.
+
+### 5. Run against a model server
+
+Before a real baseline run, replace `model_revision` in
+`configs/eval/qwen2_5_7b_instruct.yaml` with the exact model commit SHA. The
+evaluator rejects an unpinned revision for non-dry runs.
+
+Start an OpenAI-compatible vLLM or SGLang server, then run a small pilot:
+
 ```bash
-bash evaluation/kill_sglang_server.sh
-```
-The evaluation code above can be used to test most models supported by Sglang.
-
-## 🩺 HuatuoGPT Series 
-
-Explore our HuatuoGPT series:
-- [**HuatuoGPT**](https://github.com/FreedomIntelligence/HuatuoGPT): Taming Language Models to Be a Doctor
-- [**HuatuoGPT-II**](https://github.com/FreedomIntelligence/HuatuoGPT-II): One-stage Training for Medical Adaptation of LLMs
-- [**HuatuoGPT-Vision**](https://github.com/FreedomIntelligence/HuatuoGPT-Vision): Injecting Medical Visual Knowledge into Multimodal LLMs at Scale
-- [**CoD (Chain-of-Diagnosis)**](https://github.com/FreedomIntelligence/Chain-of-Diagnosis): Towards an Interpretable Medical Agent using Chain of Diagnosis
-- [**HuatuoGPT-o1**](https://github.com/FreedomIntelligence/HuatuoGPT-o1): Towards Medical Complex Reasoning with LLMs
-
-
-## 📖 Citation
-```
-@misc{chen2024huatuogpto1medicalcomplexreasoning,
-      title={HuatuoGPT-o1, Towards Medical Complex Reasoning with LLMs}, 
-      author={Junying Chen and Zhenyang Cai and Ke Ji and Xidong Wang and Wanlong Liu and Rongsheng Wang and Jianye Hou and Benyou Wang},
-      year={2024},
-      eprint={2412.18925},
-      archivePrefix={arXiv},
-      primaryClass={cs.CL},
-      url={https://arxiv.org/abs/2412.18925}, 
-}
+python evaluation/run_eval.py \
+  --config configs/eval/qwen2_5_7b_instruct.yaml \
+  --limit 200
 ```
 
+After inspecting the pilot outputs, remove `--limit` for the full 5,456-item
+evaluation. To resume an interrupted run, pass its directory using
+`--run-dir`.
 
-## Star History
+## Repository layout
 
-[![Star History Chart](https://api.star-history.com/svg?repos=FreedomIntelligence/HuatuoGPT-o1&type=Date)](https://star-history.com/#FreedomIntelligence/HuatuoGPT-o1&Date)
+```text
+configs/eval/              Baseline evaluation configuration
+data/benchmark/            Generated benchmark files and tracked manifest
+data_pipeline/             Deterministic data preparation
+docs/                      Roadmap and project documentation
+evaluation/                Answer extraction, metrics, and evaluation runner
+requirements/              Stage-specific dependency sets
+results/baseline/          Local evaluation outputs (ignored by Git)
+tests/                     Unit tests and offline fixtures
+```
+
+The root-level `SFT_stage1.py`, `RL_stage2.py`, `ppo_utils/`, and data-search
+scripts are inherited research code and are retained as references. They are
+not yet the MEDTRACE-R1 training implementation. In particular,
+`RL_stage2.py` implements PPO rather than the planned GRPO/DAPO pipeline, and
+the root `requirements.txt` describes that legacy environment.
+
+## Data provenance and leakage policy
+
+The current evaluation snapshot was inherited from the HuatuoGPT-o1
+repository. Its manifest therefore uses the status `inherited_unverified`.
+Original dataset revisions and redistribution terms must be verified before a
+public release.
+
+MedQA test and MedMCQA validation are evaluation-only in MEDTRACE-R1. They must
+not be used for CoT generation, SFT, PRM training, reward-weight selection, or
+prompt tuning. Development and reward-development splits will be created from
+training data in a later stage.
+
+The inherited `data/demo_data.json` contains examples where generated
+reasoning conflicts with the labelled answer. It must not be treated as
+verified SFT data.
+
+## Upstream acknowledgement
+
+This repository started from the public
+[FreedomIntelligence/HuatuoGPT-o1](https://github.com/FreedomIntelligence/HuatuoGPT-o1)
+code snapshot and its medical reasoning methodology. MEDTRACE-R1 adds a new
+reproducibility, data-verification, SFT, PRM, and GRPO/DAPO engineering track.
+
+The imported snapshot did not include a root license file. Confirm upstream
+licensing and dataset terms before redistribution or commercial use.

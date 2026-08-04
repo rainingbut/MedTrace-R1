@@ -1,0 +1,29 @@
+{
+  "combined_file": "data/benchmark/medical_mcq_eval.jsonl",
+  "combined_records": 5456,
+  "combined_sha256": "2667539b38e43c538da784803a8b19b3ef9309fd65a26ffe65944d511977b6df",
+  "datasets": [
+    {
+      "benchmark": "medqa",
+      "output_file": "data/benchmark/medqa_test.jsonl",
+      "output_sha256": "f3630686aa9a025a76a4984b1881332a2b1b42e1121f968ab6e749cca1cda8ca",
+      "records": 1273,
+      "source_key": "MedQA_USLME_test",
+      "split": "test"
+    },
+    {
+      "benchmark": "medmcqa",
+      "output_file": "data/benchmark/medmcqa_validation.jsonl",
+      "output_sha256": "4ef55bccaf6d76ab7a894925bb2622d3b768aefb071a208b09638bc2f622ac57",
+      "records": 4183,
+      "source_key": "MedMCQA_validation",
+      "split": "validation"
+    }
+  ],
+  "duplicate_content_groups": [],
+  "provenance_note": "Records were inherited from the HuatuoGPT-o1 evaluation snapshot. Verify the original dataset revisions and licenses before redistribution.",
+  "provenance_status": "inherited_unverified",
+  "schema_version": 1,
+  "source_file": "evaluation/data/eval_data.json",
+  "source_sha256": "fcaf2fb131d07bba6f861f1ee5a398ca2077c0c2a6f35ea1e1df31f42ac7e86b"
+}

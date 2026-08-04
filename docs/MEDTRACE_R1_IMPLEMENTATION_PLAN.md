@@ -1,4 +1,4 @@
-# Clinical-o1 完整实现方案
+# MEDTRACE-R1 完整实现方案
 
 ## 1. 项目目标
 
@@ -231,7 +231,7 @@ process_reward = 0.5 × min(step_scores) + 0.5 × mean(step_scores)
 ## 4. 最小目录改造
 
 ```text
-Clinical-o1/
+MEDTRACE-R1/
 ├── configs/             # SFT、GRPO、DAPO 配置
 ├── data/
 │   ├── benchmark/       # 标准化 benchmark
@@ -279,7 +279,7 @@ Clinical-o1/
 
 ## 7. 最终简历描述模板
 
-### Clinical-o1：基于 Qwen2.5-7B 的医疗长逻辑推理与过程监督对齐模型
+### MEDTRACE-R1：基于 Qwen2.5-7B 的医疗长逻辑推理与过程监督对齐模型
 
 **项目负责人｜个人项目｜起止时间按实际填写**
 

@@ -1,0 +1,37 @@
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.venv/
+venv/
+
+# Editors and operating systems
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+
+# Local credentials
+.env
+.env.*
+!.env.example
+
+# Model and training artifacts
+checkpoints/
+ckpts/
+train_logs/
+wandb/
+*.safetensors
+*.pt
+*.pth
+
+# Generated benchmark files and evaluation outputs
+data/benchmark/*.jsonl
+!data/benchmark/manifest.json
+results/baseline/*/
+!results/baseline/.gitkeep
+
+# Local server logs
+*.log

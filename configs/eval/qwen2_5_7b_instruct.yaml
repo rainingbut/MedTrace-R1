@@ -1,0 +1,21 @@
+model: Qwen/Qwen2.5-7B-Instruct
+# Replace this placeholder with the exact Hugging Face commit SHA before a real run.
+model_revision: REPLACE_WITH_RESOLVED_COMMIT_SHA
+served_dtype: bfloat16
+quantization: null
+
+base_url: http://127.0.0.1:8000/v1
+api_key_env: MEDTRACE_API_KEY
+input_file: data/benchmark/medical_mcq_eval.jsonl
+output_root: results/baseline
+
+prompt_style: reasoning
+system_prompt: You are a careful medical reasoning assistant evaluated on multiple-choice questions.
+temperature: 0
+top_p: 1.0
+max_new_tokens: 1024
+seed: 42
+
+concurrency: 8
+timeout_seconds: 180
+max_retries: 2
