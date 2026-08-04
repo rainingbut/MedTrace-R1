@@ -1,0 +1,160 @@
+# Qwen2.5-7B-Instruct baseline runbook
+
+This runbook produces the first official MEDTRACE-R1 baseline. It uses BF16
+weights without quantisation and evaluates the pinned model revision on MedQA
+test and MedMCQA validation.
+
+## Frozen components
+
+| Component | Frozen value |
+|---|---|
+| Model | `Qwen/Qwen2.5-7B-Instruct` |
+| Model/tokenizer revision | `a09a35458c702b33eeacc393d103063234e8bc28` |
+| Model license | Apache-2.0 |
+| vLLM | `0.24.0` |
+| Docker manifest digest | `sha256:251eba5cc7c12fed0b75da22a9240e582b1c9e39f6fbc064f86781b963bd814f` |
+| Precision | BF16, no quantisation |
+| Maximum context | 4096 tokens |
+| Maximum concurrent sequences | 8 |
+| Generation | temperature 0, top-p 1.0, maximum 1024 new tokens, seed 42 |
+
+The official vLLM image contains its compatible PyTorch and Transformers
+versions. `scripts/capture_runtime.py` records their actual in-container
+versions, Docker image ID/digests, GPU model, VRAM, driver, and Git commit.
+
+## Recommended rental
+
+- Preferred: one L40S 48 GB, A100 40 GB, or A100 80 GB.
+- Budget option: one RTX 4090 24 GB, using the frozen 4096-token context and
+  eight-sequence cap. Treat this as provisional until the pilot shows no OOM.
+- Disk: at least 80 GB free for the container image, model cache, repository,
+  and results.
+- Host: Linux with Docker, NVIDIA Container Toolkit, and a driver compatible
+  with the pinned vLLM image.
+
+Do not use a quantised model for the official BF16 baseline.
+
+## 1. Prepare the instance
+
+```bash
+git clone https://github.com/rainingbut/MedTrace-R1.git
+cd MedTrace-R1
+git checkout <the-stage-0.2-commit>
+test -z "$(git status --porcelain)"
+
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install --upgrade pip
+python -m pip install -r requirements/eval.txt
+
+bash -n scripts/*.sh
+
+python data_pipeline/verify_benchmark_provenance.py
+python data_pipeline/prepare_benchmarks.py
+```
+
+The provenance check uses the network but downloads no model weights.
+
+## 2. Pull and start the pinned server
+
+Inspect the runtime constants, then pull the immutable image:
+
+```bash
+source configs/runtime/baseline_vllm.sh
+docker pull "${VLLM_IMAGE}"
+```
+
+Start the server in a persistent `tmux` session:
+
+```bash
+./scripts/serve_vllm.sh 2>&1 | tee results/vllm-server.log
+```
+
+The first start downloads approximately 15.2 GB of model files. Keep the
+`.cache/huggingface` directory on persistent storage if the provider separates
+system and data disks.
+
+## 3. Run the stratified 200-question pilot
+
+In a second terminal:
+
+```bash
+source .venv/bin/activate
+./scripts/run_baseline_pilot.sh
+```
+
+The pilot evaluates 100 MedQA and 100 MedMCQA records. These predictions are
+the first 200 records of the official run and will be reused by the resume
+command. Do not tune prompts, decoding parameters, or reward weights based on
+pilot accuracy.
+
+Operational acceptance gates:
+
+- API error count is zero;
+- no OOM or server restart occurred;
+- truncation rate is zero, or is investigated before continuing;
+- the runtime manifest reports the expected model revision, image, vLLM
+  version, BF16-capable GPU, and a clean Git commit;
+- `predictions.jsonl`, `metadata.json`, and `metrics.json` are present.
+
+Parse and format rates describe model behaviour. If they reveal a protocol
+problem, stop and create a development-set experiment rather than tuning on
+these held-out benchmark labels.
+
+## 4. Estimate time and cost
+
+```bash
+python scripts/estimate_full_run.py \
+  --run-dir results/baseline/<pilot-run-directory> \
+  --hourly-rate <provider-price-per-hour>
+```
+
+The estimate uses measured concurrent wall-clock time, scales it to all 5456
+records, adds a 25% safety factor, and recommends a booking duration. Provider
+pricing is deliberately supplied at run time rather than hard-coded.
+
+## 5. Resume the same run over the full benchmark
+
+Keep the same server, GPU instance, runtime manifest, Git commit, and config:
+
+```bash
+./scripts/resume_full_baseline.sh \
+  results/baseline/<pilot-run-directory>
+```
+
+The evaluator verifies configuration, input, and runtime-manifest hashes before
+reusing the 200 pilot predictions. It appends the remaining records and reports
+the complete MedQA and MedMCQA metrics separately.
+
+If the instance or container image changes, start a new run instead of mixing
+two runtime manifests.
+
+## 6. Preserve results before terminating the instance
+
+Copy the following off the rental instance:
+
+```text
+results/baseline/<run>/predictions.jsonl
+results/baseline/<run>/metrics.json
+results/baseline/<run>/metadata.json
+results/runtime/runtime_manifest.json
+results/vllm-server.log
+data/benchmark/manifest.json
+data/benchmark/provenance.json
+```
+
+Record the provider, GPU hourly rate, invoice/runtime, and any OOM or retry
+events in the experiment report. Then stop the server:
+
+```bash
+./scripts/stop_vllm.sh
+```
+
+Do not write the baseline numbers into the résumé until these artifacts have
+been reviewed and committed to an experiment report.
+
+## Primary references
+
+- [Qwen2.5-7B-Instruct model card](https://huggingface.co/Qwen/Qwen2.5-7B-Instruct)
+- [vLLM official Docker deployment](https://docs.vllm.ai/en/latest/deployment/docker/)
+- [vLLM serve arguments](https://docs.vllm.ai/en/latest/cli/serve/)

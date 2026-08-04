@@ -1,0 +1,54 @@
+{
+  "content_verification": "exact_match",
+  "datasets": [
+    {
+      "benchmark": "medqa",
+      "comparison": {
+        "first_mismatches": [],
+        "local_rows": 1273,
+        "matched_rows": 1273,
+        "mismatched_rows": 0,
+        "official_rows": 1273,
+        "status": "exact_match"
+      },
+      "license": {
+        "hf_dataset_card": "not_declared",
+        "original_repository": "MIT",
+        "original_repository_url": "https://github.com/jind11/MedQA",
+        "review_status": "manual_review_required"
+      },
+      "local_key": "MedQA_USLME_test",
+      "official_config": "default",
+      "official_repo": "openlifescienceai/MedQA-USMLE-4-options-hf",
+      "official_revision": "20a8f4d6b851f6391751f6e76c06bc3a26c83e0b",
+      "official_split": "test"
+    },
+    {
+      "benchmark": "medmcqa",
+      "comparison": {
+        "first_mismatches": [],
+        "local_rows": 4183,
+        "matched_rows": 4183,
+        "mismatched_rows": 0,
+        "official_rows": 4183,
+        "status": "exact_match"
+      },
+      "license": {
+        "hf_dataset_card": "Apache-2.0",
+        "original_repository": "MIT",
+        "original_repository_url": "https://github.com/medmcqa/medmcqa",
+        "review_status": "conflicting_metadata_manual_review_required"
+      },
+      "local_key": "MedMCQA_validation",
+      "official_config": "default",
+      "official_repo": "openlifescienceai/medmcqa",
+      "official_revision": "91c6572c454088bf71b679ad90aa8dffcd0d5868",
+      "official_split": "validation"
+    }
+  ],
+  "local_source_file": "evaluation/data/eval_data.json",
+  "local_source_sha256": "fcaf2fb131d07bba6f861f1ee5a398ca2077c0c2a6f35ea1e1df31f42ac7e86b",
+  "provenance_status": "content_verified_license_review_required",
+  "schema_version": 1,
+  "verified_at_utc": "2026-08-04T14:28:40.991100+00:00"
+}

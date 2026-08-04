@@ -161,13 +161,24 @@ def main() -> None:
     combined_path = output_dir / "medical_mcq_eval.jsonl"
     _write_jsonl(combined_path, all_records)
     duplicate_groups = [ids for ids in content_locations.values() if len(ids) > 1]
+    provenance_path = output_dir / "provenance.json"
+    if provenance_path.exists():
+        with provenance_path.open("r", encoding="utf-8") as handle:
+            provenance = json.load(handle)
+        if provenance.get("local_source_sha256") != sha256_file(source_path):
+            raise ValueError("provenance report does not match the current source file")
+        provenance_status = provenance["provenance_status"]
+        provenance_reference = provenance_path.relative_to(REPO_ROOT).as_posix()
+        provenance_sha256 = sha256_file(provenance_path)
+    else:
+        provenance_status = "inherited_unverified"
+        provenance_reference = None
+        provenance_sha256 = None
     manifest = {
         "schema_version": 1,
-        "provenance_status": "inherited_unverified",
-        "provenance_note": (
-            "Records were inherited from the HuatuoGPT-o1 evaluation snapshot. "
-            "Verify the original dataset revisions and licenses before redistribution."
-        ),
+        "provenance_status": provenance_status,
+        "provenance_file": provenance_reference,
+        "provenance_sha256": provenance_sha256,
         "source_file": source_path.relative_to(REPO_ROOT).as_posix(),
         "source_sha256": sha256_file(source_path),
         "datasets": dataset_manifest,

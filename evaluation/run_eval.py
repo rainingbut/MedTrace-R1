@@ -42,6 +42,15 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--run-dir", help="Resume an existing run directory")
     parser.add_argument("--limit", type=int, help="Evaluate only the first N records")
     parser.add_argument(
+        "--limit-per-benchmark",
+        type=int,
+        help="Evaluate the first N records from each benchmark",
+    )
+    parser.add_argument(
+        "--runtime-manifest",
+        help="Override config runtime_manifest with a captured GPU/container manifest",
+    )
+    parser.add_argument(
         "--dry-run",
         action="store_true",
         help="Use mock_output or a fixed dummy answer; do not call a model",
@@ -166,6 +175,26 @@ def _post_chat_completion(
     return content, usage.get("completion_tokens"), choice.get("finish_reason")
 
 
+def _get_server_info(config: dict[str, Any]) -> dict[str, Any]:
+    api_key_env = str(config.get("api_key_env", "MEDTRACE_API_KEY"))
+    api_key = os.environ.get(api_key_env, "EMPTY")
+    base_url = str(config["base_url"]).rstrip("/")
+    server_root = base_url[:-3] if base_url.endswith("/v1") else base_url
+    headers = {"Authorization": f"Bearer {api_key}"}
+
+    def get_json(url: str) -> dict[str, Any]:
+        request = urllib_request.Request(url, headers=headers)
+        with urllib_request.urlopen(
+            request, timeout=float(config["timeout_seconds"])
+        ) as response:
+            return json.loads(response.read().decode("utf-8"))
+
+    return {
+        "models": get_json(f"{base_url}/models"),
+        "version": get_json(f"{server_root}/version"),
+    }
+
+
 def _evaluate_one(
     record: dict[str, Any], config: dict[str, Any], dry_run: bool
 ) -> dict[str, Any]:
@@ -233,6 +262,8 @@ def _validate_config(config: dict[str, Any], dry_run: bool) -> None:
     required = {
         "model",
         "model_revision",
+        "expected_vllm_version",
+        "expected_vllm_image",
         "base_url",
         "input_file",
         "output_root",
@@ -257,6 +288,33 @@ def _validate_config(config: dict[str, Any], dry_run: bool) -> None:
         raise ValueError("pin model_revision to an exact commit SHA before a real run")
 
 
+def _select_records(
+    records: list[dict[str, Any]],
+    limit: int | None,
+    limit_per_benchmark: int | None,
+) -> list[dict[str, Any]]:
+    if limit is not None and limit_per_benchmark is not None:
+        raise ValueError("use only one of --limit and --limit-per-benchmark")
+    if limit is not None:
+        if limit < 1:
+            raise ValueError("--limit must be positive")
+        return records[:limit]
+    if limit_per_benchmark is None:
+        return records
+    if limit_per_benchmark < 1:
+        raise ValueError("--limit-per-benchmark must be positive")
+
+    counts: dict[str, int] = {}
+    selected: list[dict[str, Any]] = []
+    for record in records:
+        benchmark = str(record["benchmark"])
+        count = counts.get(benchmark, 0)
+        if count < limit_per_benchmark:
+            selected.append(record)
+            counts[benchmark] = count + 1
+    return selected
+
+
 def main() -> None:
     args = parse_args()
     config_path = _resolve_repo_path(args.config).resolve()
@@ -265,14 +323,45 @@ def main() -> None:
         config["input_file"] = args.input_file
     if args.output_root:
         config["output_root"] = args.output_root
+    if args.runtime_manifest:
+        config["runtime_manifest"] = args.runtime_manifest
     _validate_config(config, args.dry_run)
 
     input_path = _resolve_repo_path(str(config["input_file"])).resolve()
     records = _load_jsonl(input_path)
-    if args.limit is not None:
-        if args.limit < 1:
-            raise ValueError("--limit must be positive")
-        records = records[: args.limit]
+    records = _select_records(records, args.limit, args.limit_per_benchmark)
+
+    runtime_manifest: dict[str, Any] | None = None
+    runtime_manifest_path: Path | None = None
+    if config.get("runtime_manifest"):
+        runtime_manifest_path = _resolve_repo_path(
+            str(config["runtime_manifest"])
+        ).resolve()
+        if runtime_manifest_path.exists():
+            with runtime_manifest_path.open("r", encoding="utf-8") as handle:
+                runtime_manifest = json.load(handle)
+            if not args.dry_run:
+                expected_runtime = {
+                    "model_id": config["model"],
+                    "model_revision": config["model_revision"],
+                    "requested_image": config["expected_vllm_image"],
+                }
+                for field, expected in expected_runtime.items():
+                    if runtime_manifest.get(field) != expected:
+                        raise ValueError(
+                            f"runtime manifest {field} does not match config: "
+                            f"{runtime_manifest.get(field)!r} != {expected!r}"
+                        )
+                actual_vllm = (runtime_manifest.get("packages") or {}).get("vllm")
+                if actual_vllm != str(config["expected_vllm_version"]):
+                    raise ValueError(
+                        "runtime manifest vLLM version does not match config: "
+                        f"{actual_vllm!r} != {config['expected_vllm_version']!r}"
+                    )
+        elif not args.dry_run:
+            raise ValueError(f"runtime manifest does not exist: {runtime_manifest_path}")
+    elif not args.dry_run:
+        raise ValueError("a runtime_manifest is required for a real baseline run")
 
     if args.run_dir:
         run_dir = _resolve_repo_path(args.run_dir).resolve()
@@ -302,7 +391,13 @@ def main() -> None:
 
     config_sha256 = _sha256(config_path)
     input_sha256 = _sha256(input_path)
+    runtime_manifest_sha256 = (
+        _sha256(runtime_manifest_path)
+        if runtime_manifest_path is not None and runtime_manifest_path.exists()
+        else None
+    )
     metadata_path = run_dir / "metadata.json"
+    previous_metadata: dict[str, Any] = {}
     if args.run_dir and metadata_path.exists():
         with metadata_path.open("r", encoding="utf-8") as handle:
             previous_metadata = json.load(handle)
@@ -312,19 +407,33 @@ def main() -> None:
             raise ValueError("cannot resume: input data hash has changed")
         if bool(previous_metadata.get("dry_run")) != args.dry_run:
             raise ValueError("cannot resume: dry-run mode has changed")
+        if previous_metadata.get("runtime_manifest_sha256") != runtime_manifest_sha256:
+            raise ValueError("cannot resume: runtime manifest hash has changed")
 
     pending = [record for record in records if str(record["id"]) not in existing_ids]
     git_status = _git_value("status", "--porcelain")
+    server_info = None if args.dry_run else _get_server_info(config)
+    run_started = time.perf_counter()
+    original_started_at = previous_metadata.get(
+        "started_at_utc", datetime.now(timezone.utc).isoformat()
+    )
+    previous_elapsed_seconds = float(previous_metadata.get("elapsed_seconds", 0.0))
     metadata = {
         "schema_version": 1,
         "status": "running",
-        "started_at_utc": datetime.now(timezone.utc).isoformat(),
+        "started_at_utc": original_started_at,
         "dry_run": args.dry_run,
         "config_path": str(config_path),
         "config_sha256": config_sha256,
         "resolved_config": config,
         "input_file": str(input_path),
         "input_sha256": input_sha256,
+        "runtime_manifest_file": (
+            str(runtime_manifest_path) if runtime_manifest_path is not None else None
+        ),
+        "runtime_manifest_sha256": runtime_manifest_sha256,
+        "runtime_manifest": runtime_manifest,
+        "server_info": server_info,
         "requested_records": len(records),
         "already_completed": len(existing),
         "git_commit": _git_value("rev-parse", "HEAD"),
@@ -358,6 +467,9 @@ def main() -> None:
             "status": "complete",
             "finished_at_utc": datetime.now(timezone.utc).isoformat(),
             "completed_records": len(completed),
+            "elapsed_seconds": round(
+                previous_elapsed_seconds + time.perf_counter() - run_started, 6
+            ),
         }
     )
     _write_json(metadata_path, metadata)

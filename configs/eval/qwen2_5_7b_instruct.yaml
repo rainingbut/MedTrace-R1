@@ -1,13 +1,15 @@
 model: Qwen/Qwen2.5-7B-Instruct
-# Replace this placeholder with the exact Hugging Face commit SHA before a real run.
-model_revision: REPLACE_WITH_RESOLVED_COMMIT_SHA
+model_revision: a09a35458c702b33eeacc393d103063234e8bc28
 served_dtype: bfloat16
 quantization: null
+expected_vllm_version: 0.24.0
+expected_vllm_image: vllm/vllm-openai@sha256:251eba5cc7c12fed0b75da22a9240e582b1c9e39f6fbc064f86781b963bd814f
 
 base_url: http://127.0.0.1:8000/v1
 api_key_env: MEDTRACE_API_KEY
 input_file: data/benchmark/medical_mcq_eval.jsonl
 output_root: results/baseline
+runtime_manifest: results/runtime/runtime_manifest.json
 
 prompt_style: reasoning
 system_prompt: You are a careful medical reasoning assistant evaluated on multiple-choice questions.

@@ -18,6 +18,7 @@ SFT, PRM, GRPO, or DAPO result is claimed yet.
 |---|---|
 | Git version control | Complete |
 | MedQA/MedMCQA normalisation | Complete |
+| Row-level benchmark provenance verification | Complete |
 | Deterministic answer extraction and metrics | Complete |
 | Local tests and evaluation dry-run | Complete |
 | Qwen2.5-7B-Instruct baseline | Pending GPU run |
@@ -27,6 +28,9 @@ SFT, PRM, GRPO, or DAPO result is claimed yet.
 
 The detailed roadmap is in
 [`docs/MEDTRACE_R1_IMPLEMENTATION_PLAN.md`](docs/MEDTRACE_R1_IMPLEMENTATION_PLAN.md).
+The cloud procedure is in
+[`docs/BASELINE_RUNBOOK.md`](docs/BASELINE_RUNBOOK.md), and the provenance
+findings are in [`docs/DATA_PROVENANCE.md`](docs/DATA_PROVENANCE.md).
 
 ## Reproducible evaluation
 
@@ -88,21 +92,19 @@ python evaluation/run_eval.py \
 
 ### 5. Run against a model server
 
-Before a real baseline run, replace `model_revision` in
-`configs/eval/qwen2_5_7b_instruct.yaml` with the exact model commit SHA. The
-evaluator rejects an unpinned revision for non-dry runs.
+The configuration pins the model revision. A real run additionally requires a
+runtime manifest captured from the GPU host; this prevents results from being
+reported without the container, package, driver, and GPU details.
 
-Start an OpenAI-compatible vLLM or SGLang server, then run a small pilot:
+Follow the cloud runbook to start the pinned vLLM container, then run the
+stratified pilot and capture the runtime automatically:
 
 ```bash
-python evaluation/run_eval.py \
-  --config configs/eval/qwen2_5_7b_instruct.yaml \
-  --limit 200
+./scripts/run_baseline_pilot.sh
 ```
 
-After inspecting the pilot outputs, remove `--limit` for the full 5,456-item
-evaluation. To resume an interrupted run, pass its directory using
-`--run-dir`.
+The cloud runbook explains how to reuse the stratified pilot in the full
+5,456-item evaluation without changing the frozen protocol.
 
 ## Repository layout
 
@@ -125,10 +127,10 @@ the root `requirements.txt` describes that legacy environment.
 
 ## Data provenance and leakage policy
 
-The current evaluation snapshot was inherited from the HuatuoGPT-o1
-repository. Its manifest therefore uses the status `inherited_unverified`.
-Original dataset revisions and redistribution terms must be verified before a
-public release.
+The current evaluation snapshot was inherited from HuatuoGPT-o1. All 5,456
+records have been matched exactly against pinned Hugging Face revisions.
+License metadata still requires manual review before dataset redistribution;
+see `docs/DATA_PROVENANCE.md`.
 
 MedQA test and MedMCQA validation are evaluation-only in MEDTRACE-R1. They must
 not be used for CoT generation, SFT, PRM training, reward-weight selection, or

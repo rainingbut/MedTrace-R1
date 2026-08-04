@@ -32,6 +32,10 @@ data/benchmark/*.jsonl
 !data/benchmark/manifest.json
 results/baseline/*/
 !results/baseline/.gitkeep
+results/runtime/
+
+# Local model cache used by the cloud runbook
+.cache/
 
 # Local server logs
 *.log
