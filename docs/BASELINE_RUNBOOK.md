@@ -18,34 +18,65 @@ test and MedMCQA validation.
 | Maximum concurrent sequences | 8 |
 | Generation | temperature 0, top-p 1.0, maximum 1024 new tokens, seed 42 |
 
-The official vLLM image contains its compatible PyTorch and Transformers
-versions. `scripts/capture_runtime.py` records their actual in-container
-versions, Docker image ID/digests, GPU model, VRAM, driver, and Git commit.
+Docker hosts use the frozen official image. AutoDL container instances use the
+native Python environment from `requirements.txt`, because AutoDL does not
+support Docker inside a container instance. `scripts/capture_runtime.py`
+records the selected backend, actual package versions, GPU, driver, Git commit,
+and either the Docker digest or the native requirements hash and `pip freeze`.
 
 ## Recommended rental
 
-- Preferred: one L40S 48 GB, A100 40 GB, or A100 80 GB.
-- Budget option: one RTX 4090 24 GB, using the frozen 4096-token context and
-  eight-sequence cap. Treat this as provisional until the pilot shows no OOM.
-- Disk: at least 80 GB free for the container image, model cache, repository,
-  and results.
-- Host: Linux with Docker, NVIDIA Container Toolkit, and a driver compatible
-  with the pinned vLLM image.
+For the current inference-only baseline, rent **one RTX 4090 24 GB**. The model
+weights occupy roughly 15 GB in BF16; the frozen 4096-token context and
+eight-sequence cap leave the remaining VRAM for KV cache and runtime overhead.
+The 200-question pilot is still an OOM gate.
+
+- Preferred cost/performance: one RTX 4090 24 GB.
+- Safer fallback after an OOM: one L40S 48 GB or A100 40/80 GB.
+- Avoid cards below 24 GB and avoid quantisation for the official baseline.
+- CPU/RAM: at least 8 vCPU and 32 GB host RAM.
+- AutoDL system disk: expand the default 30 GB system disk to at least 60 GB.
+- AutoDL data disk: at least 50 GB; use `/root/autodl-tmp` for the repository,
+  Hugging Face cache, and results. Expand to 80 GB if keeping multiple models.
+
+This recommendation applies only to baseline inference. SFT and GRPO/DAPO
+will receive separate memory plans; do not assume one 4090 can run the final RL
+pipeline.
 
 Do not use a quantised model for the official BF16 baseline.
 
-## 1. Prepare the instance
+## 1. Prepare an AutoDL container instance
+
+Select an Ubuntu/Miniconda image, Python 3.12, and a host whose NVIDIA driver
+supports the CUDA backend selected by vLLM. AutoDL instances are containers and
+cannot run Docker internally, so use the native backend:
 
 ```bash
+cd /root/autodl-tmp
 git clone https://github.com/rainingbut/MedTrace-R1.git
 cd MedTrace-R1
-git checkout <the-stage-0.2-commit>
+git checkout <the-AutoDL-baseline-commit>
 test -z "$(git status --porcelain)"
 
-python3 -m venv .venv
+python -m pip install --upgrade uv
+uv venv --python 3.12 --seed --managed-python .venv
 source .venv/bin/activate
-python -m pip install --upgrade pip
-python -m pip install -r requirements/eval.txt
+uv pip install -r requirements.txt --torch-backend=auto
+
+export VLLM_RUNTIME_BACKEND=native
+export HF_HOME=/root/autodl-tmp/medtrace-cache/huggingface
+export MEDTRACE_CACHE_DIR="${HF_HOME}"
+
+python - <<'PY'
+import torch, transformers, vllm
+print("torch", torch.__version__, "CUDA", torch.version.cuda)
+print("transformers", transformers.__version__)
+print("vllm", vllm.__version__)
+assert vllm.__version__ == "0.24.0"
+assert torch.cuda.is_available()
+assert torch.cuda.is_bf16_supported()
+PY
+nvidia-smi
 
 bash -n scripts/*.sh
 
@@ -55,7 +86,27 @@ python data_pipeline/prepare_benchmarks.py
 
 The provenance check uses the network but downloads no model weights.
 
-## 2. Pull and start the pinned server
+To keep the backend and cache variables in new terminals, either export them
+again or add those two exports to the instance's shell startup file.
+
+## 2. Start the pinned server
+
+### AutoDL native backend
+
+In a persistent `tmux` session:
+
+```bash
+cd /root/autodl-tmp/MedTrace-R1
+source .venv/bin/activate
+export VLLM_RUNTIME_BACKEND=native
+export MEDTRACE_CACHE_DIR=/root/autodl-tmp/medtrace-cache/huggingface
+./scripts/serve_vllm.sh 2>&1 | tee results/vllm-server.log
+```
+
+The first start downloads approximately 15.2 GB of model files to the AutoDL
+data disk.
+
+### Docker-capable host
 
 Inspect the runtime constants, then pull the immutable image:
 
@@ -70,9 +121,9 @@ Start the server in a persistent `tmux` session:
 ./scripts/serve_vllm.sh 2>&1 | tee results/vllm-server.log
 ```
 
-The first start downloads approximately 15.2 GB of model files. Keep the
-`.cache/huggingface` directory on persistent storage if the provider separates
-system and data disks.
+The first start downloads approximately 15.2 GB of model files. Keep the cache
+directory on persistent storage if the provider separates system and data
+disks.
 
 ## 3. Run the stratified 200-question pilot
 

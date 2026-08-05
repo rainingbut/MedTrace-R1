@@ -1,9 +1,10 @@
-trl==0.13.0
-accelerate==0.34.2
-torch==2.5.1
-transformers==4.46.2
-deepspeed==0.15.4
-xformers==0.0.28
-vllm==0.6.4
-torchvision==0.20.1
-retrying
+# MEDTRACE-R1 stage 0 baseline environment.
+# Platform: Linux x86_64; Python 3.12 is recommended.
+#
+# vLLM owns the compatible torch/torchvision/transformers/CUDA Python stack.
+# Do not add separate pins for those packages here. On GPU hosts install with:
+#   uv pip install -r requirements.txt --torch-backend=auto
+vllm==0.24.0
+
+# Evaluation/configuration dependency (kept in sync with requirements/eval.txt).
+PyYAML==6.0.2

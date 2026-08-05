@@ -264,6 +264,7 @@ def _validate_config(config: dict[str, Any], dry_run: bool) -> None:
         "model_revision",
         "expected_vllm_version",
         "expected_vllm_image",
+        "expected_native_requirements_file",
         "base_url",
         "input_file",
         "output_root",
@@ -286,6 +287,50 @@ def _validate_config(config: dict[str, Any], dry_run: bool) -> None:
         raise ValueError("concurrency must be positive")
     if not dry_run and str(config["model_revision"]).startswith("REPLACE_WITH_"):
         raise ValueError("pin model_revision to an exact commit SHA before a real run")
+
+
+def _validate_runtime_manifest(
+    config: dict[str, Any], runtime_manifest: dict[str, Any]
+) -> None:
+    expected_runtime = {
+        "model_id": config["model"],
+        "model_revision": config["model_revision"],
+    }
+    for field, expected in expected_runtime.items():
+        if runtime_manifest.get(field) != expected:
+            raise ValueError(
+                f"runtime manifest {field} does not match config: "
+                f"{runtime_manifest.get(field)!r} != {expected!r}"
+            )
+
+    runtime_backend = runtime_manifest.get("runtime_backend", "docker")
+    if runtime_backend == "docker":
+        expected_image = config["expected_vllm_image"]
+        if runtime_manifest.get("requested_image") != expected_image:
+            raise ValueError(
+                "runtime manifest requested_image does not match config: "
+                f"{runtime_manifest.get('requested_image')!r} != {expected_image!r}"
+            )
+    elif runtime_backend == "native":
+        requirements_path = _resolve_repo_path(
+            str(config["expected_native_requirements_file"])
+        ).resolve()
+        requirements = runtime_manifest.get("requirements") or {}
+        expected_sha256 = _sha256(requirements_path)
+        if requirements.get("sha256") != expected_sha256:
+            raise ValueError(
+                "native runtime requirements hash does not match the current "
+                f"{requirements_path.name}"
+            )
+    else:
+        raise ValueError(f"unsupported runtime backend: {runtime_backend!r}")
+
+    actual_vllm = (runtime_manifest.get("packages") or {}).get("vllm")
+    if actual_vllm != str(config["expected_vllm_version"]):
+        raise ValueError(
+            "runtime manifest vLLM version does not match config: "
+            f"{actual_vllm!r} != {config['expected_vllm_version']!r}"
+        )
 
 
 def _select_records(
@@ -341,23 +386,7 @@ def main() -> None:
             with runtime_manifest_path.open("r", encoding="utf-8") as handle:
                 runtime_manifest = json.load(handle)
             if not args.dry_run:
-                expected_runtime = {
-                    "model_id": config["model"],
-                    "model_revision": config["model_revision"],
-                    "requested_image": config["expected_vllm_image"],
-                }
-                for field, expected in expected_runtime.items():
-                    if runtime_manifest.get(field) != expected:
-                        raise ValueError(
-                            f"runtime manifest {field} does not match config: "
-                            f"{runtime_manifest.get(field)!r} != {expected!r}"
-                        )
-                actual_vllm = (runtime_manifest.get("packages") or {}).get("vllm")
-                if actual_vllm != str(config["expected_vllm_version"]):
-                    raise ValueError(
-                        "runtime manifest vLLM version does not match config: "
-                        f"{actual_vllm!r} != {config['expected_vllm_version']!r}"
-                    )
+                _validate_runtime_manifest(config, runtime_manifest)
         elif not args.dry_run:
             raise ValueError(f"runtime manifest does not exist: {runtime_manifest_path}")
     elif not args.dry_run:

@@ -1,0 +1,12 @@
+# Original HuatuoGPT-o1 training stack retained for reference only.
+# It is intentionally separate because these pins conflict with the stage 0
+# vLLM 0.24.0 baseline environment in the repository root requirements.txt.
+trl==0.13.0
+accelerate==0.34.2
+torch==2.5.1
+transformers==4.46.2
+deepspeed==0.15.4
+xformers==0.0.28
+vllm==0.6.4
+torchvision==0.20.1
+retrying
