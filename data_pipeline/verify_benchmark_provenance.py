@@ -16,7 +16,7 @@ from urllib import request as urllib_request
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 HF_API = "https://huggingface.co/api/datasets"
-DATASETS_SERVER = "https://datasets-server.huggingface.co/rows"
+HF_DATASETS = "https://huggingface.co/datasets"
 OPTION_LABELS = "ABCD"
 
 
@@ -58,6 +58,8 @@ SOURCES: tuple[dict[str, Any], ...] = (
         "config": "default",
         "split": "test",
         "rows": 1273,
+        "data_file": "data/test-00000-of-00001.parquet",
+        "file_sha256": "1177dd34cb298cfe4f4a286797832a41e397ffde6847009203a8d1a0914327f5",
         "normalise": _normalise_medqa,
         "license": {
             "hf_dataset_card": "not_declared",
@@ -74,6 +76,8 @@ SOURCES: tuple[dict[str, Any], ...] = (
         "config": "default",
         "split": "validation",
         "rows": 4183,
+        "data_file": "data/validation-00000-of-00001.parquet",
+        "file_sha256": "b768a1ea34afc9f80d3106d9b21f80fa8a00ec450a1f6cd641af72ca9e591021",
         "normalise": _normalise_medmcqa,
         "license": {
             "hf_dataset_card": "Apache-2.0",
@@ -89,9 +93,14 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--source", default="evaluation/data/eval_data.json")
     parser.add_argument("--output", default="data/benchmark/provenance.json")
-    parser.add_argument("--page-size", type=int, default=100)
+    parser.add_argument("--cache-dir", default=".cache/provenance")
     parser.add_argument("--timeout", type=float, default=30.0)
     parser.add_argument("--max-retries", type=int, default=4)
+    parser.add_argument(
+        "--update-report",
+        action="store_true",
+        help="replace the committed report after an intentional provenance review",
+    )
     return parser.parse_args()
 
 
@@ -109,7 +118,14 @@ def _sha256(path: Path) -> str:
 
 
 def _get_json(url: str, timeout: float, max_retries: int) -> dict[str, Any]:
-    request = urllib_request.Request(url, headers={"User-Agent": "MEDTRACE-R1/0.1"})
+    request = urllib_request.Request(
+        url,
+        headers={
+            "User-Agent": "MEDTRACE-R1/0.1",
+            "Cache-Control": "no-cache",
+            "Pragma": "no-cache",
+        },
+    )
     for attempt in range(max_retries + 1):
         try:
             with urllib_request.urlopen(request, timeout=timeout) as response:
@@ -124,29 +140,83 @@ def _get_json(url: str, timeout: float, max_retries: int) -> dict[str, Any]:
     raise AssertionError("retry loop ended unexpectedly")
 
 
-def _fetch_rows(source: dict[str, Any], args: argparse.Namespace) -> list[dict[str, Any]]:
-    rows: list[dict[str, Any]] = []
+def _cached_file_matches(path: Path, expected_sha256: str) -> bool:
+    return path.is_file() and _sha256(path) == expected_sha256
+
+
+def _download_file(
+    url: str,
+    destination: Path,
+    timeout: float,
+    max_retries: int,
+) -> None:
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    temporary = destination.with_suffix(destination.suffix + ".tmp")
+    request = urllib_request.Request(
+        url,
+        headers={
+            "User-Agent": "MEDTRACE-R1/0.1",
+            "Cache-Control": "no-cache",
+            "Pragma": "no-cache",
+        },
+    )
+    for attempt in range(max_retries + 1):
+        try:
+            with urllib_request.urlopen(request, timeout=timeout) as response:
+                with temporary.open("wb") as handle:
+                    while chunk := response.read(1024 * 1024):
+                        handle.write(chunk)
+            temporary.replace(destination)
+            return
+        except (OSError, urllib_error.HTTPError) as exc:
+            temporary.unlink(missing_ok=True)
+            if attempt == max_retries:
+                raise RuntimeError(f"failed to retrieve {url}: {exc}") from exc
+            headers = getattr(exc, "headers", None)
+            retry_after = headers.get("Retry-After") if headers else None
+            delay = float(retry_after) if retry_after else min(2**attempt, 8)
+            time.sleep(delay)
+    raise AssertionError("retry loop ended unexpectedly")
+
+
+def _load_pinned_rows(
+    source: dict[str, Any], args: argparse.Namespace
+) -> list[dict[str, Any]]:
+    try:
+        import pyarrow.parquet as parquet
+    except ImportError as exc:
+        raise RuntimeError(
+            "pyarrow is required for provenance verification; install requirements.txt"
+        ) from exc
+
+    cache_dir = _repo_path(args.cache_dir).resolve()
+    cache_name = (
+        f"{source['benchmark']}-{source['revision'][:12]}-"
+        f"{Path(source['data_file']).name}"
+    )
+    cached_file = cache_dir / cache_name
+    expected_sha256 = str(source["file_sha256"])
+    if not _cached_file_matches(cached_file, expected_sha256):
+        repo_id = urllib_parse.quote(str(source["repo_id"]), safe="/")
+        revision = urllib_parse.quote(str(source["revision"]), safe="")
+        data_file = urllib_parse.quote(str(source["data_file"]), safe="/")
+        url = f"{HF_DATASETS}/{repo_id}/resolve/{revision}/{data_file}"
+        print(f"{source['benchmark']}: downloading pinned Parquet file", flush=True)
+        _download_file(url, cached_file, args.timeout, args.max_retries)
+    actual_sha256 = _sha256(cached_file)
+    if actual_sha256 != expected_sha256:
+        raise ValueError(
+            f"{source['repo_id']} file hash changed: "
+            f"{actual_sha256} != {expected_sha256}"
+        )
+
+    rows = parquet.read_table(cached_file).to_pylist()
     expected_rows = int(source["rows"])
-    for offset in range(0, expected_rows, args.page_size):
-        query = urllib_parse.urlencode(
-            {
-                "dataset": source["repo_id"],
-                "config": source["config"],
-                "split": source["split"],
-                "offset": offset,
-                "length": min(args.page_size, expected_rows - offset),
-            }
+    if len(rows) != expected_rows:
+        raise ValueError(
+            f"{source['repo_id']} row count changed: {len(rows)} != {expected_rows}"
         )
-        response = _get_json(
-            f"{DATASETS_SERVER}?{query}", args.timeout, args.max_retries
-        )
-        if int(response["num_rows_total"]) != expected_rows:
-            raise ValueError(
-                f"{source['repo_id']} row count changed: "
-                f"{response['num_rows_total']} != {expected_rows}"
-            )
-        rows.extend(item["row"] for item in response["rows"])
-        print(f"{source['benchmark']}: fetched {len(rows)}/{expected_rows}", flush=True)
+    print(f"{source['benchmark']}: loaded {len(rows)}/{expected_rows}", flush=True)
     return rows
 
 
@@ -206,17 +276,20 @@ def _write_json(path: Path, value: object) -> None:
 
 def main() -> None:
     args = parse_args()
-    if not 1 <= args.page_size <= 100:
-        raise ValueError("--page-size must be between 1 and 100")
-
     source_path = _repo_path(args.source).resolve()
     output_path = _repo_path(args.output).resolve()
     with source_path.open("r", encoding="utf-8") as handle:
         local_data = json.load(handle)
+    existing_report: dict[str, Any] | None = None
+    if output_path.exists():
+        with output_path.open("r", encoding="utf-8") as handle:
+            existing_report = json.load(handle)
 
     dataset_reports: list[dict[str, Any]] = []
     for source in SOURCES:
-        repo_url = f"{HF_API}/{urllib_parse.quote(source['repo_id'], safe='/')}"
+        repo_id = urllib_parse.quote(source["repo_id"], safe="/")
+        revision = urllib_parse.quote(source["revision"], safe="")
+        repo_url = f"{HF_API}/{repo_id}/revision/{revision}"
         repo_info = _get_json(repo_url, args.timeout, args.max_retries)
         actual_revision = str(repo_info["sha"])
         if actual_revision != source["revision"]:
@@ -225,7 +298,7 @@ def main() -> None:
                 f"{actual_revision} != {source['revision']}"
             )
 
-        official_rows = _fetch_rows(source, args)
+        official_rows = _load_pinned_rows(source, args)
         local_rows = local_data[source["local_key"]]
         comparison = _compare_dataset(local_rows, official_rows, source["normalise"])
         dataset_reports.append(
@@ -236,6 +309,8 @@ def main() -> None:
                 "official_revision": actual_revision,
                 "official_config": source["config"],
                 "official_split": source["split"],
+                "official_file": source["data_file"],
+                "official_file_sha256": source["file_sha256"],
                 "comparison": comparison,
                 "license": source["license"],
             }
@@ -245,9 +320,13 @@ def main() -> None:
         report["comparison"]["status"] == "exact_match"
         for report in dataset_reports
     )
+    if args.update_report or existing_report is None:
+        verified_at_utc = datetime.now(timezone.utc).isoformat()
+    else:
+        verified_at_utc = existing_report.get("verified_at_utc")
     report = {
-        "schema_version": 1,
-        "verified_at_utc": datetime.now(timezone.utc).isoformat(),
+        "schema_version": 2,
+        "verified_at_utc": verified_at_utc,
         "local_source_file": source_path.relative_to(REPO_ROOT).as_posix(),
         "local_source_sha256": _sha256(source_path),
         "content_verification": "exact_match" if content_verified else "mismatch",
@@ -258,10 +337,24 @@ def main() -> None:
         ),
         "datasets": dataset_reports,
     }
-    _write_json(output_path, report)
-    print(json.dumps(report, ensure_ascii=False, indent=2))
     if not content_verified:
+        print(json.dumps(report, ensure_ascii=False, indent=2))
         raise SystemExit(1)
+    if args.update_report:
+        _write_json(output_path, report)
+        print(f"Updated provenance report: {output_path}")
+    elif existing_report is None:
+        raise RuntimeError(
+            "committed provenance report is missing; rerun with --update-report "
+            "only after reviewing the pinned sources"
+        )
+    elif report != existing_report:
+        raise RuntimeError(
+            "live verification passed, but the committed provenance report differs; "
+            "review the diff before using --update-report"
+        )
+    print(json.dumps(report, ensure_ascii=False, indent=2))
+    print("Provenance verification passed without modifying the committed report.")
 
 
 if __name__ == "__main__":

@@ -8,3 +8,4 @@ vllm==0.24.0
 
 # Evaluation/configuration dependency (kept in sync with requirements/eval.txt).
 PyYAML==6.0.2
+pyarrow==25.0.0

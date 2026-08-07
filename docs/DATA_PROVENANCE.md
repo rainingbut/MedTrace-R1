@@ -18,9 +18,12 @@ can be repeated with:
 python data_pipeline/verify_benchmark_provenance.py
 ```
 
-The verifier first checks that each remote repository is still at the pinned
-revision. It then retrieves all official rows and fails on any row-count,
-question, option, or answer difference.
+The verifier resolves each immutable repository revision, downloads the split's
+pinned Parquet file, verifies its file SHA256, and then compares every official
+row. It does not use the query-based Dataset Viewer rows API, because some cloud
+proxies cache that endpoint without respecting its query string. The command is
+read-only by default; maintainers must explicitly pass `--update-report` after
+reviewing any intentional provenance-report change.
 
 ## Licensing status
 

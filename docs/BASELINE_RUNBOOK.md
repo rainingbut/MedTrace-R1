@@ -84,7 +84,9 @@ python data_pipeline/verify_benchmark_provenance.py
 python data_pipeline/prepare_benchmarks.py
 ```
 
-The provenance check uses the network but downloads no model weights.
+The provenance check uses the network and downloads the two pinned benchmark
+Parquet splits into `.cache/provenance`; it downloads no model weights and does
+not modify the committed provenance report.
 
 To keep the backend and cache variables in new terminals, either export them
 again or add those two exports to the instance's shell startup file.

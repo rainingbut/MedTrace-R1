@@ -19,6 +19,8 @@
       },
       "local_key": "MedQA_USLME_test",
       "official_config": "default",
+      "official_file": "data/test-00000-of-00001.parquet",
+      "official_file_sha256": "1177dd34cb298cfe4f4a286797832a41e397ffde6847009203a8d1a0914327f5",
       "official_repo": "openlifescienceai/MedQA-USMLE-4-options-hf",
       "official_revision": "20a8f4d6b851f6391751f6e76c06bc3a26c83e0b",
       "official_split": "test"
@@ -41,6 +43,8 @@
       },
       "local_key": "MedMCQA_validation",
       "official_config": "default",
+      "official_file": "data/validation-00000-of-00001.parquet",
+      "official_file_sha256": "b768a1ea34afc9f80d3106d9b21f80fa8a00ec450a1f6cd641af72ca9e591021",
       "official_repo": "openlifescienceai/medmcqa",
       "official_revision": "91c6572c454088bf71b679ad90aa8dffcd0d5868",
       "official_split": "validation"
@@ -49,6 +53,6 @@
   "local_source_file": "evaluation/data/eval_data.json",
   "local_source_sha256": "fcaf2fb131d07bba6f861f1ee5a398ca2077c0c2a6f35ea1e1df31f42ac7e86b",
   "provenance_status": "content_verified_license_review_required",
-  "schema_version": 1,
+  "schema_version": 2,
   "verified_at_utc": "2026-08-04T14:28:40.991100+00:00"
 }
