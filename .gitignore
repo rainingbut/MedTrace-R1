@@ -39,3 +39,7 @@ results/runtime/
 
 # Local server logs
 *.log
+
+# medtrace-baseline-final-result：
+medtrace-baseline-8459db5-20260809-final.tar.gz
+medtrace-baseline-8459db5-20260809-final/
