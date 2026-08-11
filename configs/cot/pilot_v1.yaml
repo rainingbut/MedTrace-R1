@@ -1,0 +1,105 @@
+schema_version: medtrace.cot.pilot.v1
+execution_enabled: false
+
+privacy_boundary: private_noncommercial_research
+redistribute_questions_or_trajectories: false
+
+sources:
+  medqa:
+    repository: openlifescienceai/MedQA-USMLE-4-options-hf
+    revision: 20a8f4d6b851f6391751f6e76c06bc3a26c83e0b
+    split: train
+    expected_records: 10178
+    source_file_sha256: fd1937b7cb76dde951a59170114c0b796e1a09cd5c2ca8826915ec9ff1f4c416
+  medmcqa:
+    repository: openlifescienceai/medmcqa
+    revision: 91c6572c454088bf71b679ad90aa8dffcd0d5868
+    split: train
+    expected_records: 182822
+    source_file_sha256: b119434ba551517a6ec0ba1f7e0b4c029165ed284a4704f262ce37c791c493c5
+
+isolation:
+  reject_non_train: true
+  exact_eval_overlap: reject
+  normalized_eval_overlap: reject
+  near_eval_overlap_jaccard: 0.90
+  include_legacy_demo_data: false
+
+rule_filter:
+  min_steps: 3
+  max_steps: 8
+  max_trajectory_characters: 12000
+  max_step_characters: 3000
+
+sampling:
+  seed: 20260811
+  total_questions: 40
+  questions_per_benchmark:
+    medqa: 20
+    medmcqa: 20
+  candidates_per_question: 4
+  independent_teacher_requests: true
+  stratify_medmcqa_subject: true
+  stratify_question_length: true
+
+teacher:
+  provider: aliyun
+  model_id: qwen3-max-2026-01-23
+  base_url: https://dashscope.aliyuncs.com/compatible-mode/v1
+  api_key_env: DASHSCOPE_API_KEY
+  prompt_version: teacher_v1
+  expose_gold_answer: false
+  enable_thinking: false
+  temperature: 0.6
+  top_p: 0.95
+  max_output_tokens: 1536
+  max_retries: 1
+  timeout_seconds: 180
+
+screener:
+  provider: local_vllm
+  model_id: Qwen/Qwen2.5-7B-Instruct
+  model_revision: a09a35458c702b33eeacc393d103063234e8bc28
+  base_url: http://127.0.0.1:8000/v1
+  api_key_env: MEDTRACE_API_KEY
+  runtime_manifest: results/runtime/cot_screener_runtime_manifest.json
+  expected_vllm_version: 0.24.0
+  prompt_version: screener_v1
+  temperature: 0
+  max_output_tokens: 512
+  max_retries: 1
+  timeout_seconds: 180
+
+validator:
+  provider: deepseek
+  model_id: deepseek-v4-pro
+  provider_version: DeepSeek-V4-Pro
+  base_url: https://api.deepseek.com
+  api_key_env: DEEPSEEK_API_KEY
+  prompt_version: validator_v1
+  thinking_mode: true
+  temperature: 0
+  max_output_tokens: 1536
+  max_retries: 1
+  timeout_seconds: 300
+
+budget:
+  api_hard_cap_cny_equivalent: 10
+  local_gpu_hours_cap: 1
+  stop_before_limit_fraction: 0.90
+  usd_to_cny: 7.20
+  teacher_cny_per_million_input_tokens: 2.5
+  teacher_cny_per_million_output_tokens: 10
+  validator_usd_per_million_input_tokens: 0.435
+  validator_usd_per_million_output_tokens: 0.87
+
+outputs:
+  source_manifest: data/source/stage2_train_manifest.json
+  isolation_rejections: data/source/isolation_rejections.jsonl
+  pilot_questions: data/source/pilot/pilot_v1_questions.jsonl
+  pilot_input_manifest: data/source/pilot/pilot_v1_manifest.json
+  canonical_trajectories: data/cot/private/pilot_v1/trajectories.jsonl
+  sft_verified: data/cot/sft_verified.jsonl
+  prm_process_train: data/prm/process_train.jsonl
+  run_manifest: results/cot/pilot_v1/manifest.json
+  statistics_report: reports/data_statistics.md

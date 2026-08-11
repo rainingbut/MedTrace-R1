@@ -1,0 +1,137 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://medtrace.local/schemas/cot_trajectory_v1.schema.json",
+  "title": "MEDTRACE canonical CoT trajectory",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version", "trajectory_id", "source", "problem", "generation",
+    "trajectory", "rule_check", "screening", "verification", "disposition"
+  ],
+  "properties": {
+    "schema_version": {"const": "medtrace.cot.v1"},
+    "trajectory_id": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["dataset", "config", "split", "source_revision", "source_file_sha256", "source_id", "source_index", "content_sha256"],
+      "properties": {
+        "dataset": {"enum": ["medqa", "medmcqa"]},
+        "config": {"type": "string", "minLength": 1},
+        "split": {"const": "train"},
+        "source_revision": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+        "source_file_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "source_id": {"type": "string", "minLength": 1},
+        "source_index": {"type": "integer", "minimum": 0},
+        "content_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+      }
+    },
+    "problem": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["question", "choices", "gold_answer"],
+      "properties": {
+        "question": {"type": "string", "minLength": 1},
+        "choices": {
+          "type": "object",
+          "minProperties": 2,
+          "additionalProperties": {"type": "string", "minLength": 1},
+          "propertyNames": {"pattern": "^[A-Z]$"}
+        },
+        "gold_answer": {"type": "string", "pattern": "^[A-Z]$"}
+      }
+    },
+    "generation": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["run_mode", "provider", "model_id", "prompt_version", "candidate_index", "decoding", "request_id", "usage"],
+      "properties": {
+        "run_mode": {"enum": ["dry_run", "real"]},
+        "provider": {"type": "string", "minLength": 1},
+        "model_id": {"type": "string", "minLength": 1},
+        "prompt_version": {"const": "teacher_v1"},
+        "candidate_index": {"type": "integer", "minimum": 0, "maximum": 3},
+        "decoding": {"type": "object"},
+        "request_id": {"type": ["string", "null"]},
+        "usage": {"type": "object"}
+      }
+    },
+    "trajectory": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["steps", "predicted_answer", "raw_response_sha256"],
+      "properties": {
+        "steps": {
+          "type": "array", "minItems": 3, "maxItems": 8,
+          "items": {
+            "type": "object", "additionalProperties": false,
+            "required": ["index", "text"],
+            "properties": {
+              "index": {"type": "integer", "minimum": 0},
+              "text": {"type": "string", "minLength": 1}
+            }
+          }
+        },
+        "predicted_answer": {"type": "string", "pattern": "^[A-Z]$"},
+        "raw_response_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+      }
+    },
+    "rule_check": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["passed", "failure_codes"],
+      "properties": {
+        "passed": {"type": "boolean"},
+        "failure_codes": {"type": "array", "items": {"type": "string"}, "uniqueItems": true}
+      }
+    },
+    "screening": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "model_id", "model_revision", "prompt_version", "verdict", "suspected_first_error_step", "error_codes"],
+      "properties": {
+        "status": {"enum": ["complete", "not_run", "api_error", "parse_error"]},
+        "model_id": {"type": "string", "minLength": 1},
+        "model_revision": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+        "prompt_version": {"const": "screener_v1"},
+        "verdict": {"enum": ["pass", "reject", "review", "not_run"]},
+        "suspected_first_error_step": {"type": ["integer", "null"], "minimum": 0},
+        "error_codes": {"type": "array", "items": {"type": "string"}, "uniqueItems": true}
+      }
+    },
+    "verification": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "provider", "model_id", "provider_version", "prompt_version", "trajectory_label", "first_error_step", "answer_consistent", "problem_status", "steps", "request_id", "usage"],
+      "properties": {
+        "status": {"enum": ["complete", "not_run", "api_error", "parse_error"]},
+        "provider": {"type": "string", "minLength": 1},
+        "model_id": {"type": "string", "minLength": 1},
+        "provider_version": {"type": "string", "minLength": 1},
+        "prompt_version": {"const": "validator_v1"},
+        "trajectory_label": {"type": ["integer", "null"], "minimum": 0, "maximum": 1},
+        "first_error_step": {"type": ["integer", "null"], "minimum": 0},
+        "answer_consistent": {"type": ["boolean", "null"]},
+        "problem_status": {"enum": ["ok", "ambiguous", "bad_gold", "not_run"]},
+        "steps": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["index", "local_verdict", "prefix_label", "error_codes", "concise_reason"],
+            "properties": {
+              "index": {"type": "integer", "minimum": 0},
+              "local_verdict": {"enum": ["correct", "incorrect", "uncertain"]},
+              "prefix_label": {"type": "integer", "minimum": 0, "maximum": 1},
+              "error_codes": {"type": "array", "items": {"type": "string"}, "uniqueItems": true},
+              "concise_reason": {"type": "string"}
+            }
+          }
+        },
+        "request_id": {"type": ["string", "null"]},
+        "usage": {"type": "object"}
+      }
+    },
+    "disposition": {"enum": ["sft_accept", "prm_only", "human_review", "reject"]}
+  }
+}
