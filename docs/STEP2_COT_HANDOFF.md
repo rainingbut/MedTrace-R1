@@ -24,6 +24,97 @@ SHA256: 8AF8AC60FB8832E307E19B16F281E271C3EFDA1B54C9EC1C843FE7841449BD96
 
 归档和解压后的逐题预测必须保持私有，不要提交到 Git。
 
+## 当前 AutoDL 环境
+
+本项目目前使用 AutoDL 容器实例：
+
+| 项目 | 已核验值 |
+|---|---|
+| 平台 | AutoDL 容器实例 |
+| 容器 UUID | `smyulw5z7c-d584d27f` |
+| GPU | NVIDIA GeForce RTX 4090 |
+| GPU 显存 | 24,564 MiB（约 24 GB） |
+| NVIDIA Driver | `580.105.08` |
+| 驱动显示 CUDA | `13.0` |
+| CPU | 16 核 |
+| 内存 | 90 GB |
+| 系统盘 | 30 GB，基线运行时已用约 9.7 GB |
+| 数据盘 | `/root/autodl-tmp`，60 GB |
+| Python | `3.12.13` |
+| PyTorch | `2.11.0+cu130` |
+| Transformers | `5.14.1` |
+| vLLM | `0.24.0` |
+
+关键路径：
+
+```text
+仓库：        /root/autodl-tmp/MedTrace-R1
+虚拟环境：    /root/autodl-tmp/MedTrace-R1/.venv
+模型缓存：    /root/autodl-tmp/medtrace-cache/huggingface
+运行结果：    /root/autodl-tmp/MedTrace-R1/results
+```
+
+大文件、模型、生成数据和 checkpoint 应放在数据盘 `/root/autodl-tmp`，不要放到
+30 GB 系统盘。进行大规模 CoT 生成前应再次检查数据盘剩余空间。
+
+## 新开机后的基本操作
+
+AutoDL 关机后磁盘文件保留，但 vLLM、tmux 和其他内存进程都会终止。每次开机后，
+先重新进入仓库并激活既有环境：
+
+```bash
+cd /root/autodl-tmp/MedTrace-R1
+source .venv/bin/activate
+
+export VLLM_RUNTIME_BACKEND=native
+export HF_HOME=/root/autodl-tmp/medtrace-cache/huggingface
+export MEDTRACE_CACHE_DIR="${HF_HOME}"
+```
+
+AutoDL 当时访问 Hugging Face, github 等环境，需要先设置：
+
+```bash
+source /etc/network_turbo
+```
+
+只应在确认目标模型及其固定 revision 已存在于缓存后启用离线模式。不要因为网络问题
+静默更换模型或 revision。
+
+最小环境确认：
+
+```bash
+git rev-parse HEAD
+git status --short
+
+python - <<'PY'
+import torch, transformers, vllm
+print("torch:", torch.__version__)
+print("transformers:", transformers.__version__)
+print("vllm:", vllm.__version__)
+print("cuda_available:", torch.cuda.is_available())
+print("bf16_supported:", torch.cuda.is_bf16_supported())
+PY
+
+nvidia-smi
+df -h / /root/autodl-tmp
+```
+
+对于耗时的模型服务、数据生成或验证任务，应放入独立的 `tmux` 会话。通用方式：
+
+```bash
+tmux new -s <任务名>
+# 在 tmux 内激活 .venv、导出上述环境变量，然后运行任务。
+# 脱离：Ctrl+B，松开后按 D
+# 重连：tmux attach -t <任务名>
+```
+
+每个正式生成阶段都应使用独立、明确命名的输出目录和日志文件。不要使用“最新目录”
+猜测目标，不要覆盖既有基线结果。每次开机或服务重启后都应重新捕获对应运行环境；
+不得把不同进程、模型 revision、提示版本或解码配置生成的数据混为同一个运行。
+
+步骤二尚未冻结教师模型和验证模型。确定模型后，应另行记录其精确 revision、精度、
+上下文长度、并发数、生成参数、缓存路径、服务日志与运行清单，再开始正式生成。
+
 ## 下一步
 
 进入实施计划的步骤二“构造分步 CoT 数据”。目标产物：
