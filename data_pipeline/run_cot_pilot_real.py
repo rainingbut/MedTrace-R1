@@ -154,8 +154,13 @@ def _call_with_budget(
             if role == "teacher":
                 extras["enable_thinking"] = bool(config["enable_thinking"])
             elif role == "validator":
-                extras["thinking"] = {"type": "enabled"}
-                extras["reasoning_effort"] = "high"
+                extras["reasoning"] = {"effort": config["reasoning_effort"]}
+                extras["provider"] = {
+                    "zdr": bool(config["require_zero_data_retention"]),
+                    "data_collection": "deny",
+                    "allow_fallbacks": bool(config["allow_provider_fallbacks"]),
+                    "require_parameters": True,
+                }
             result = post_chat_completion(
                 base_url=str(config["base_url"]),
                 api_key=api_key,

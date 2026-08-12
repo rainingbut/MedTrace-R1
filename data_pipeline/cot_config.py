@@ -8,7 +8,7 @@ from typing import Any
 EXPECTED_MODELS = {
     "teacher": "qwen3-max-2026-01-23",
     "screener": "Qwen/Qwen2.5-7B-Instruct",
-    "validator": "deepseek-v4-pro",
+    "validator": "deepseek/deepseek-v4-pro",
 }
 EXPECTED_PROMPTS = {
     "teacher": "teacher_v1",
@@ -65,6 +65,15 @@ def validate_pilot_config(config: dict[str, Any], real_run: bool = False) -> Non
     screener = config.get("screener") or {}
     if not screener.get("runtime_manifest") or not screener.get("expected_vllm_version"):
         raise ValueError("screener runtime manifest and vLLM version must be pinned")
+    validator = config.get("validator") or {}
+    if validator.get("provider") != "openrouter":
+        raise ValueError("validator must use the approved OpenRouter provider")
+    if validator.get("api_key_env") != "OPENROUTER_API_KEY":
+        raise ValueError("validator must use OPENROUTER_API_KEY")
+    if validator.get("reasoning_effort") != "high":
+        raise ValueError("validator reasoning_effort must remain high")
+    if validator.get("require_zero_data_retention") is not True:
+        raise ValueError("validator must require zero-data-retention routing")
 
     budget = config.get("budget") or {}
     if float(budget.get("api_hard_cap_cny_equivalent", 0)) != 10:

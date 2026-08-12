@@ -33,12 +33,15 @@ class RealPilotBudgetTests(unittest.TestCase):
             "max_output_tokens": 512,
             "max_retries": 0,
             "timeout_seconds": 1,
+            "reasoning_effort": "high",
+            "require_zero_data_retention": True,
+            "allow_provider_fallbacks": True,
         }
 
         with patch(
             "data_pipeline.run_cot_pilot_real.post_chat_completion",
             return_value=response,
-        ):
+        ) as post:
             result = _call_with_budget(
                 role="validator",
                 config=config,
@@ -54,6 +57,17 @@ class RealPilotBudgetTests(unittest.TestCase):
         self.assertEqual(result["status"], "api_or_parse_error")
         self.assertAlmostEqual(ledger.spent_cny, expected)
         self.assertAlmostEqual(result["usage"]["cost_cny"], expected)
+        extras = post.call_args.kwargs["extra_body"]
+        self.assertEqual(extras["reasoning"], {"effort": "high"})
+        self.assertEqual(
+            extras["provider"],
+            {
+                "zdr": True,
+                "data_collection": "deny",
+                "allow_fallbacks": True,
+                "require_parameters": True,
+            },
+        )
 
 
 if __name__ == "__main__":

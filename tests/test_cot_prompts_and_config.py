@@ -51,6 +51,11 @@ class FrozenArtifactTests(unittest.TestCase):
         with (ROOT / "configs/cot/pilot_v1.yaml").open(encoding="utf-8") as handle:
             config = yaml.safe_load(handle)
         validate_pilot_config(config)
+        self.assertEqual(config["validator"]["provider"], "openrouter")
+        self.assertEqual(
+            config["validator"]["model_id"], "deepseek/deepseek-v4-pro"
+        )
+        self.assertTrue(config["validator"]["require_zero_data_retention"])
         with self.assertRaisesRegex(ValueError, "explicitly enabled"):
             validate_pilot_config(config, real_run=True)
 

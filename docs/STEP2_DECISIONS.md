@@ -22,11 +22,17 @@ approval covers that pilot only; it does not cover larger-scale generation.
 |---|---|---|
 | Teacher | `qwen3-max-2026-01-23` | `teacher_v1`, gold-blind |
 | First-pass screener | `Qwen/Qwen2.5-7B-Instruct` at `a09a35458c702b33eeacc393d103063234e8bc28` | `screener_v1` |
-| Independent verifier | `deepseek-v4-pro` (`DeepSeek-V4-Pro`) | `validator_v1` |
+| Independent verifier | OpenRouter `deepseek/deepseek-v4-pro` | `validator_v1` |
 
 The teacher produces one candidate per request. Four independent requests are
 made for each question. The screener is conservative, and its verdict is hidden
 from the independent verifier.
+
+The verifier routes through OpenRouter using the user's existing balance. Each
+request requires ZDR routing, denies data-collecting providers, requires support
+for the supplied parameters, and keeps provider fallbacks within the same exact
+model slug. The teacher remains on DashScope because the frozen dated Qwen model
+is not replaced by an unverified OpenRouter alias.
 
 ## Pilot
 

@@ -71,13 +71,16 @@ screener:
   timeout_seconds: 180
 
 validator:
-  provider: deepseek
-  model_id: deepseek-v4-pro
-  provider_version: DeepSeek-V4-Pro
-  base_url: https://api.deepseek.com
-  api_key_env: DEEPSEEK_API_KEY
+  provider: openrouter
+  model_id: deepseek/deepseek-v4-pro
+  provider_version: OpenRouter-DeepSeek-V4-Pro
+  base_url: https://openrouter.ai/api/v1
+  api_key_env: OPENROUTER_API_KEY
   prompt_version: validator_v1
   thinking_mode: true
+  reasoning_effort: high
+  require_zero_data_retention: true
+  allow_provider_fallbacks: true
   temperature: 0
   max_output_tokens: 1536
   max_retries: 1

@@ -10,7 +10,8 @@ later full-data generation stage.
 - Teacher: `qwen3-max-2026-01-23`, gold-blind `teacher_v1`.
 - Local screener: `Qwen/Qwen2.5-7B-Instruct` at revision
   `a09a35458c702b33eeacc393d103063234e8bc28`, `screener_v1`.
-- Independent verifier: `deepseek-v4-pro`, `validator_v1`.
+- Independent verifier: OpenRouter `deepseek/deepseek-v4-pro`, `validator_v1`,
+  with per-request zero-data-retention routing.
 - API hard cap: CNY 10 equivalent; the runner stops before CNY 9.
 - Private outputs: `data/source/` and `results/cot/` are Git-ignored.
 
@@ -99,8 +100,8 @@ Run this in the shell that will launch the pilot:
 ```bash
 read -rsp 'DashScope API key: ' DASHSCOPE_API_KEY && echo
 export DASHSCOPE_API_KEY
-read -rsp 'DeepSeek API key: ' DEEPSEEK_API_KEY && echo
-export DEEPSEEK_API_KEY
+read -rsp 'OpenRouter API key: ' OPENROUTER_API_KEY && echo
+export OPENROUTER_API_KEY
 export MEDTRACE_API_KEY=EMPTY
 ```
 
@@ -128,7 +129,7 @@ tmux new -s cot-pilot-40
 cd /root/autodl-tmp/MedTrace-R1
 source .venv/bin/activate
 export DASHSCOPE_API_KEY
-export DEEPSEEK_API_KEY
+export OPENROUTER_API_KEY
 export MEDTRACE_API_KEY=EMPTY
 mkdir -p results/cot/pilot_v1_real
 set -o pipefail
