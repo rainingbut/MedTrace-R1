@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://medtrace.local/schemas/cot_pilot_input_v1.schema.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "created_at_utc", "config_file", "config_sha256", "source_manifest_file", "source_manifest_sha256", "sampling_seed", "sampling_method", "questions_file", "questions_sha256", "records", "records_per_benchmark", "length_quartiles", "medmcqa_subjects"],
+  "properties": {
+    "schema_version": {"const": "medtrace.cot-pilot-input.v1"},
+    "created_at_utc": {"type": "string", "format": "date-time"},
+    "config_file": {"type": "string"},
+    "config_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "source_manifest_file": {"type": "string"},
+    "source_manifest_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "sampling_seed": {"type": "integer"},
+    "sampling_method": {"const": "length_quartiles_medqa_subject_and_length_medmcqa_v1"},
+    "questions_file": {"type": "string"},
+    "questions_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "records": {"const": 40},
+    "records_per_benchmark": {
+      "type": "object", "additionalProperties": false,
+      "required": ["medqa", "medmcqa"],
+      "properties": {"medqa": {"const": 20}, "medmcqa": {"const": 20}}
+    },
+    "length_quartiles": {"type": "object"},
+    "medmcqa_subjects": {"type": "array", "minItems": 20, "maxItems": 20, "uniqueItems": true}
+  }
+}

@@ -1,0 +1,71 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://medtrace.local/schemas/training_source_manifest_v1.schema.json",
+  "title": "MEDTRACE stage-2 private training source manifest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version", "created_at_utc", "privacy_boundary", "sources",
+    "evaluation_index", "isolation_summary", "isolation_report"
+  ],
+  "properties": {
+    "schema_version": {"const": "medtrace.training-source.v1"},
+    "created_at_utc": {"type": "string", "format": "date-time"},
+    "privacy_boundary": {"const": "private_noncommercial_research"},
+    "sources": {
+      "type": "array",
+      "minItems": 2,
+      "maxItems": 2,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["benchmark", "repository", "revision", "split", "source_file", "source_file_sha256", "records", "normalized_file", "normalized_file_sha256"],
+        "properties": {
+          "benchmark": {"enum": ["medqa", "medmcqa"]},
+          "repository": {"type": "string", "minLength": 1},
+          "revision": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+          "split": {"const": "train"},
+          "source_file": {"type": "string", "minLength": 1},
+          "source_file_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+          "records": {"type": "integer", "minimum": 1},
+          "normalized_file": {"type": "string", "minLength": 1},
+          "normalized_file_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+        }
+      }
+    },
+    "evaluation_index": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["files", "combined_sha256", "records"],
+      "properties": {
+        "files": {"type": "array", "minItems": 1, "items": {"type": "string"}},
+        "combined_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "records": {"type": "integer", "minimum": 1}
+      }
+    },
+    "isolation_summary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["input_records", "accepted_records", "rejected_non_train", "rejected_exact_overlap", "rejected_normalized_overlap", "rejected_near_overlap", "rejected_duplicate_within_train"],
+      "properties": {
+        "input_records": {"type": "integer", "minimum": 0},
+        "accepted_records": {"type": "integer", "minimum": 0},
+        "rejected_non_train": {"type": "integer", "minimum": 0},
+        "rejected_exact_overlap": {"type": "integer", "minimum": 0},
+        "rejected_normalized_overlap": {"type": "integer", "minimum": 0},
+        "rejected_near_overlap": {"type": "integer", "minimum": 0}
+        ,"rejected_duplicate_within_train": {"type": "integer", "minimum": 0}
+      }
+    },
+    "isolation_report": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["file", "sha256", "records"],
+      "properties": {
+        "file": {"type": "string", "minLength": 1},
+        "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "records": {"type": "integer", "minimum": 0}
+      }
+    }
+  }
+}
