@@ -89,6 +89,10 @@ def validate_pilot_config(config: dict[str, Any], real_run: bool = False) -> Non
     }
     if any(float(budget.get(field, 0)) <= 0 for field in pricing_fields):
         raise ValueError("all pilot pricing assumptions must be positive")
+    if float(budget["validator_usd_per_million_input_tokens"]) != 2.10:
+        raise ValueError("validator maximum input price must remain USD 2.10/M")
+    if float(budget["validator_usd_per_million_output_tokens"]) != 4.40:
+        raise ValueError("validator maximum output price must remain USD 4.40/M")
 
     rule_filter = config.get("rule_filter") or {}
     if int(rule_filter.get("min_steps", 0)) != 3:

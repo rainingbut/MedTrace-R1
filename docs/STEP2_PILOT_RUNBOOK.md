@@ -11,12 +11,17 @@ later full-data generation stage.
 - Local screener: `Qwen/Qwen2.5-7B-Instruct` at revision
   `a09a35458c702b33eeacc393d103063234e8bc28`, `screener_v1`.
 - Independent verifier: OpenRouter `deepseek/deepseek-v4-pro`, `validator_v1`,
-  with per-request zero-data-retention routing.
+  with per-request zero-data-retention routing and a maximum provider price of
+  USD 2.10/M input and USD 4.40/M output tokens.
 - API hard cap: CNY 10 equivalent; the runner stops before CNY 9.
 - Private outputs: `data/source/` and `results/cot/` are Git-ignored.
 
 Do not substitute a model, revision, split, prompt version, or output directory
 when resuming this run.
+
+Validator requests reserve budget using the maximum accepted provider price.
+Completed OpenRouter requests are charged to the ledger using the returned
+`usage.cost`; a response without this field fails closed.
 
 ## 1. Prepare the AutoDL host
 

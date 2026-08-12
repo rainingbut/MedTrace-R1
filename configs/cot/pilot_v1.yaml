@@ -93,8 +93,9 @@ budget:
   usd_to_cny: 7.20
   teacher_cny_per_million_input_tokens: 2.5
   teacher_cny_per_million_output_tokens: 10
-  validator_usd_per_million_input_tokens: 0.435
-  validator_usd_per_million_output_tokens: 0.87
+  # OpenRouter request-level max_price and conservative pre-request reserve.
+  validator_usd_per_million_input_tokens: 2.10
+  validator_usd_per_million_output_tokens: 4.40
 
 outputs:
   source_manifest: data/source/stage2_train_manifest.json

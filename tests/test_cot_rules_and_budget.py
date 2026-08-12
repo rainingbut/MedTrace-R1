@@ -42,8 +42,8 @@ class BudgetTests(unittest.TestCase):
         self.pricing = {
             "teacher_cny_per_million_input_tokens": 2.5,
             "teacher_cny_per_million_output_tokens": 10,
-            "validator_usd_per_million_input_tokens": 0.435,
-            "validator_usd_per_million_output_tokens": 0.87,
+            "validator_usd_per_million_input_tokens": 2.10,
+            "validator_usd_per_million_output_tokens": 4.40,
             "usd_to_cny": 7.2,
         }
 
@@ -54,7 +54,7 @@ class BudgetTests(unittest.TestCase):
         )
         self.assertAlmostEqual(
             request_cost_cny("validator", 1_000_000, 1_000_000, self.pricing),
-            (0.435 + 0.87) * 7.2,
+            (2.10 + 4.40) * 7.2,
         )
 
     def test_budget_stops_before_hard_cap(self):

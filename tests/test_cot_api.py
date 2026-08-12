@@ -1,6 +1,8 @@
 import unittest
+from unittest.mock import MagicMock, patch
 
 from data_pipeline.cot_api import (
+    post_chat_completion,
     parse_json_object,
     validate_screener_result,
     validate_validator_result,
@@ -8,6 +10,30 @@ from data_pipeline.cot_api import (
 
 
 class JsonJudgeContractTests(unittest.TestCase):
+    def test_reads_openrouter_usage_cost_and_provider(self):
+        response = MagicMock()
+        response.__enter__.return_value = response
+        response.__exit__.return_value = False
+        response.headers = {}
+        response.read.return_value = (
+            b'{"id":"r1","provider":"Together","choices":[{"message":'
+            b'{"content":"{}"},"finish_reason":"stop"}],"usage":'
+            b'{"prompt_tokens":10,"completion_tokens":3,"cost":0.0012}}'
+        )
+        with patch("data_pipeline.cot_api.urllib_request.urlopen", return_value=response):
+            result = post_chat_completion(
+                base_url="https://openrouter.invalid/api/v1",
+                api_key="secret",
+                model="deepseek/deepseek-v4-pro",
+                system_prompt="system",
+                user_prompt="user",
+                temperature=0,
+                max_tokens=10,
+                timeout_seconds=1,
+            )
+        self.assertEqual(result.billed_cost_usd, 0.0012)
+        self.assertEqual(result.routed_provider, "Together")
+
     def test_parses_plain_and_fenced_json(self):
         self.assertEqual(parse_json_object('{"ok": true}'), {"ok": True})
         self.assertEqual(parse_json_object('```json\n{"ok": true}\n```'), {"ok": True})

@@ -34,6 +34,12 @@ for the supplied parameters, and keeps provider fallbacks within the same exact
 model slug. The teacher remains on DashScope because the frozen dated Qwen model
 is not replaced by an unverified OpenRouter alias.
 
+OpenRouter routing is sorted by price and capped per request at USD 2.10/M input
+tokens and USD 4.40/M output tokens. The runner reserves budget at those maximum
+rates before every validator request, then replaces the estimate with the
+provider-reported `usage.cost` for its durable ledger. A missing cost field is a
+failed response, not permission to fall back to an estimated successful charge.
+
 ## Pilot
 
 - 40 questions: 20 MedQA train and 20 MedMCQA train.

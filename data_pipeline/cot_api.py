@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import json
+import math
 import os
 from typing import Any
 from urllib import request as urllib_request
@@ -17,6 +18,8 @@ class ChatResult:
     finish_reason: str | None
     input_tokens: int | None
     output_tokens: int | None
+    billed_cost_usd: float | None
+    routed_provider: str | None
 
 
 def require_api_key(environment_name: str, *, allow_empty: bool = False) -> str:
@@ -79,6 +82,9 @@ def post_chat_completion(
     content = message.get("content")
     if not isinstance(content, str):
         raise ValueError("chat completion response has no text content")
+    billed_cost = _optional_float(usage.get("cost"))
+    if billed_cost is not None and (not math.isfinite(billed_cost) or billed_cost < 0):
+        raise ValueError("chat completion usage.cost must be finite and non-negative")
     return ChatResult(
         content=content,
         reasoning_content=message.get("reasoning_content"),
@@ -88,6 +94,8 @@ def post_chat_completion(
         output_tokens=_optional_int(
             usage.get("completion_tokens", usage.get("output_tokens"))
         ),
+        billed_cost_usd=billed_cost,
+        routed_provider=str(body.get("provider") or "") or None,
     )
 
 
@@ -196,3 +204,7 @@ def validate_validator_result(value: dict[str, Any], step_count: int) -> dict[st
 
 def _optional_int(value: object) -> int | None:
     return int(value) if value is not None else None
+
+
+def _optional_float(value: object) -> float | None:
+    return float(value) if value is not None else None

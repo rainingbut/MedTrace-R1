@@ -105,7 +105,13 @@ def _write_json(path: Path, value: object) -> None:
 
 
 def _estimated_input_tokens(system_prompt: str, user_prompt: str) -> int:
-    return max(1, (len(system_prompt) + len(user_prompt) + 3) // 4)
+    # UTF-8 bytes are a deliberately conservative tokenizer-independent reserve.
+    return max(
+        1,
+        len(system_prompt.encode("utf-8"))
+        + len(user_prompt.encode("utf-8"))
+        + 256,  # chat-template and message-framing reserve
+    )
 
 
 def _cost_for_result(
@@ -114,15 +120,25 @@ def _cost_for_result(
     estimated_input: int,
     estimated_output: int,
     pricing: dict[str, Any],
-) -> tuple[int, int, float, bool]:
+) -> tuple[int, int, float, bool, float | None, str]:
     input_tokens = result.input_tokens or estimated_input
     output_tokens = result.output_tokens or estimated_output
     estimated = result.input_tokens is None or result.output_tokens is None
+    if role == "validator":
+        if result.billed_cost_usd is None:
+            raise ValueError("OpenRouter validator response is missing usage.cost")
+        cost_cny = result.billed_cost_usd * float(pricing["usd_to_cny"])
+        cost_source = "provider_reported"
+    else:
+        cost_cny = request_cost_cny(role, input_tokens, output_tokens, pricing)
+        cost_source = "configured_token_rate"
     return (
         input_tokens,
         output_tokens,
-        request_cost_cny(role, input_tokens, output_tokens, pricing),
+        cost_cny,
         estimated,
+        result.billed_cost_usd,
+        cost_source,
     )
 
 
@@ -160,6 +176,15 @@ def _call_with_budget(
                     "data_collection": "deny",
                     "allow_fallbacks": bool(config["allow_provider_fallbacks"]),
                     "require_parameters": True,
+                    "sort": "price",
+                    "max_price": {
+                        "prompt": float(
+                            pricing["validator_usd_per_million_input_tokens"]
+                        ),
+                        "completion": float(
+                            pricing["validator_usd_per_million_output_tokens"]
+                        ),
+                    },
                 }
             result = post_chat_completion(
                 base_url=str(config["base_url"]),
@@ -174,7 +199,14 @@ def _call_with_budget(
                 response_format_json=response_format_json,
                 extra_body=extras,
             )
-            input_tokens, output_tokens, cost, usage_estimated = _cost_for_result(
+            (
+                input_tokens,
+                output_tokens,
+                cost,
+                usage_estimated,
+                provider_cost_usd,
+                cost_source,
+            ) = _cost_for_result(
                 role,
                 result,
                 estimated_input,
@@ -202,6 +234,13 @@ def _call_with_budget(
                     "output_tokens": output_tokens,
                     "cost_cny": round(cost + charged_for_errors, 8),
                     "estimated": usage_estimated or bool(charged_for_errors),
+                    "cost_source": (
+                        f"{cost_source}_plus_failed_attempt_reserve"
+                        if charged_for_errors
+                        else cost_source
+                    ),
+                    "provider_cost_usd": provider_cost_usd,
+                    "routed_provider": result.routed_provider,
                     "failed_attempt_reserve_cny": round(charged_for_errors, 8),
                 },
                 "attempts": attempt + 1,
@@ -225,6 +264,9 @@ def _call_with_budget(
             "output_tokens": 0,
             "cost_cny": round(charged_for_errors, 8),
             "estimated": True,
+            "cost_source": "failed_attempt_reserve",
+            "provider_cost_usd": None,
+            "routed_provider": None,
             "failed_attempt_reserve_cny": round(charged_for_errors, 8),
         },
         "attempts": attempts,
