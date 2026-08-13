@@ -77,6 +77,34 @@ def _sum_cost(events: Iterable[dict[str, Any]]) -> float:
     )
 
 
+def _event_key(event: dict[str, Any]) -> tuple[str, int]:
+    return str(event["record_id"]), int(event["candidate_index"])
+
+
+def _teacher_identity(event: dict[str, Any]) -> str:
+    record = event.get("record") or {}
+    return str(record.get("content_sha256") or event["record_id"])
+
+
+def _canonical_identity(record: dict[str, Any]) -> str:
+    source = record.get("source") or {}
+    return str(source.get("content_sha256") or source["source_id"])
+
+
+def _strict_binary_label_counts(values: Iterable[object]) -> dict[str, Any]:
+    counts: Counter[str] = Counter()
+    for value in values:
+        if type(value) is int and value in {0, 1}:
+            counts[f"int:{value}"] += 1
+        elif type(value) is bool:
+            counts[f"bool:{str(value).lower()}"] += 1
+        elif value is None:
+            counts["none"] += 1
+        else:
+            counts[f"invalid_type:{type(value).__name__}"] += 1
+    return dict(sorted(counts.items()))
+
+
 def _error_category(error: str) -> str:
     exception = error.partition(":")[0].strip() or "UnknownError"
     lowered = error.casefold()
@@ -171,22 +199,14 @@ def _coverage(
     canonical: list[dict[str, Any]],
     sft: list[dict[str, Any]],
 ) -> dict[str, Any]:
-    def teacher_identity(event: dict[str, Any]) -> str:
-        record = event.get("record") or {}
-        return str(record.get("content_sha256") or event["record_id"])
-
-    def canonical_identity(record: dict[str, Any]) -> str:
-        source = record.get("source") or {}
-        return str(source.get("content_sha256") or source["source_id"])
-
-    all_ids = {teacher_identity(event) for event in teachers}
+    all_ids = {_teacher_identity(event) for event in teachers}
     rule_ids = {
-        teacher_identity(event)
+        _teacher_identity(event)
         for event in teachers
         if (event.get("rule_check") or {}).get("passed")
     }
-    canonical_ids = {canonical_identity(record) for record in canonical}
-    sft_ids = {canonical_identity(record) for record in sft}
+    canonical_ids = {_canonical_identity(record) for record in canonical}
+    sft_ids = {_canonical_identity(record) for record in sft}
     expected = int(metadata["questions"])
     return {
         "expected_questions": expected,
@@ -197,6 +217,194 @@ def _coverage(
         "questions_without_rule_pass": expected - len(rule_ids),
         "questions_without_canonical": expected - len(canonical_ids),
         "questions_without_sft": expected - len(sft_ids),
+    }
+
+
+def _deep_coverage(
+    teachers: list[dict[str, Any]],
+    screeners: list[dict[str, Any]],
+    validators: list[dict[str, Any]],
+    canonical: list[dict[str, Any]],
+    sft: list[dict[str, Any]],
+) -> tuple[dict[str, dict[str, int]], dict[str, int]]:
+    teacher_by_key = {_event_key(event): event for event in teachers}
+    benchmark_by_question: dict[str, str] = {}
+    all_questions: set[str] = set()
+    rule_questions: set[str] = set()
+    for event in teachers:
+        identity = _teacher_identity(event)
+        benchmark = str((event.get("record") or {}).get("benchmark") or "unknown")
+        benchmark_by_question[identity] = benchmark
+        all_questions.add(identity)
+        if (event.get("rule_check") or {}).get("passed"):
+            rule_questions.add(identity)
+
+    validator_complete_questions = {
+        _teacher_identity(teacher_by_key[_event_key(event)])
+        for event in validators
+        if event.get("status") == "complete" and _event_key(event) in teacher_by_key
+    }
+    canonical_questions = {_canonical_identity(record) for record in canonical}
+    sft_questions = {_canonical_identity(record) for record in sft}
+
+    def benchmark_for_event(event: dict[str, Any]) -> str:
+        teacher = teacher_by_key.get(_event_key(event))
+        return (
+            str((teacher.get("record") or {}).get("benchmark") or "unknown")
+            if teacher
+            else "unknown"
+        )
+
+    benchmarks = set(benchmark_by_question.values())
+    benchmarks.update(
+        str((record.get("source") or {}).get("dataset") or "unknown")
+        for record in canonical
+    )
+    by_benchmark: dict[str, dict[str, int]] = {}
+    question_outcomes: Counter[str] = Counter()
+    outcomes_by_benchmark: dict[str, Counter[str]] = defaultdict(Counter)
+    for identity in all_questions:
+        benchmark = benchmark_by_question[identity]
+        if identity not in rule_questions:
+            outcome = "no_rule_pass"
+        elif identity not in validator_complete_questions:
+            outcome = "no_validator_complete"
+        elif identity not in canonical_questions:
+            outcome = "no_canonical_after_complete_validator"
+        elif identity not in sft_questions:
+            outcome = "canonical_without_sft"
+        else:
+            outcome = "has_sft"
+        question_outcomes[outcome] += 1
+        outcomes_by_benchmark[benchmark][outcome] += 1
+
+    for benchmark in sorted(benchmarks):
+        question_ids = {
+            identity
+            for identity, value in benchmark_by_question.items()
+            if value == benchmark
+        }
+        benchmark_canonical = [
+            record
+            for record in canonical
+            if str((record.get("source") or {}).get("dataset") or "unknown")
+            == benchmark
+        ]
+        benchmark_sft = [
+            record
+            for record in sft
+            if str((record.get("source") or {}).get("dataset") or "unknown")
+            == benchmark
+        ]
+        row = {
+            "questions": len(question_ids),
+            "teacher_events": sum(
+                str((event.get("record") or {}).get("benchmark") or "unknown")
+                == benchmark
+                for event in teachers
+            ),
+            "rule_passed": sum(
+                str((event.get("record") or {}).get("benchmark") or "unknown")
+                == benchmark
+                and bool((event.get("rule_check") or {}).get("passed"))
+                for event in teachers
+            ),
+            "screener_events": sum(
+                benchmark_for_event(event) == benchmark for event in screeners
+            ),
+            "validator_events": sum(
+                benchmark_for_event(event) == benchmark for event in validators
+            ),
+            "validator_complete": sum(
+                benchmark_for_event(event) == benchmark
+                and event.get("status") == "complete"
+                for event in validators
+            ),
+            "canonical_trajectories": len(benchmark_canonical),
+            "sft_records": len(benchmark_sft),
+            "questions_with_rule_pass": len(question_ids & rule_questions),
+            "questions_with_canonical": len(question_ids & canonical_questions),
+            "questions_with_sft": len(question_ids & sft_questions),
+        }
+        for outcome, count in sorted(outcomes_by_benchmark[benchmark].items()):
+            row[f"outcome:{outcome}"] = count
+        by_benchmark[benchmark] = row
+    return by_benchmark, dict(sorted(question_outcomes.items()))
+
+
+def _validator_diagnostics(
+    screeners: list[dict[str, Any]], validators: list[dict[str, Any]]
+) -> dict[str, Any]:
+    screener_by_key = {_event_key(event): event for event in screeners}
+    final_failure_sequences: Counter[str] = Counter()
+    all_error_sequences: Counter[str] = Counter()
+    retry_outcomes: Counter[str] = Counter()
+    first_error_outcomes: Counter[str] = Counter()
+    outcome_by_screener: dict[str, Counter[str]] = defaultdict(Counter)
+
+    for event in validators:
+        categories = [_error_category(str(error)) for error in event.get("errors") or []]
+        sequence = " -> ".join(categories) if categories else "none"
+        status = str(event.get("status") or "unknown")
+        if categories:
+            all_error_sequences[sequence] += 1
+            first_error_outcomes[f"{categories[0]} -> {status}"] += 1
+        if status != "complete":
+            final_failure_sequences[sequence] += 1
+        retry_outcomes[f"attempts={int(event.get('attempts') or 0)} -> {status}"] += 1
+
+        screener = screener_by_key.get(_event_key(event))
+        verdict = str((screener.get("result") or {}).get("verdict") or "unknown") if screener else "missing"
+        if status == "complete":
+            label = (event.get("result") or {}).get("trajectory_label")
+            if type(label) is int and label in {0, 1}:
+                outcome = f"label_{label}"
+            elif type(label) is bool:
+                outcome = f"bool_label_{str(label).lower()}"
+            else:
+                outcome = "invalid_label"
+        else:
+            outcome = status
+        outcome_by_screener[verdict][outcome] += 1
+
+    return {
+        "final_failure_error_sequences": dict(sorted(final_failure_sequences.items())),
+        "all_error_sequences": dict(sorted(all_error_sequences.items())),
+        "retry_outcomes": dict(sorted(retry_outcomes.items())),
+        "first_error_to_final_status": dict(sorted(first_error_outcomes.items())),
+        "outcome_by_screener_verdict": {
+            verdict: dict(sorted(counts.items()))
+            for verdict, counts in sorted(outcome_by_screener.items())
+        },
+    }
+
+
+def _validator_cost_breakdown(validators: list[dict[str, Any]]) -> dict[str, Any]:
+    failed_attempt_charged = 0.0
+    completed_response_charged = 0.0
+    by_status: Counter[str] = Counter()
+    for event in validators:
+        usage = event.get("usage") or {}
+        total = float(usage.get("cost_cny", 0) or 0)
+        failed_charge = float(usage.get("failed_attempt_reserve_cny", 0) or 0)
+        failed_attempt_charged += failed_charge
+        completed_response_charged += total - failed_charge
+        by_status[str(event.get("status") or "unknown")] += total
+    total = _sum_cost(validators)
+    return {
+        "completed_response_charged_cny": round(completed_response_charged, 8),
+        "failed_attempt_charged_cny": round(failed_attempt_charged, 8),
+        "failed_attempt_charge_note": (
+            "The event format combines provider-reported charges for failed parse/contract "
+            "responses with conservative reserves for failures before usable usage data."
+        ),
+        "sum_cny": round(completed_response_charged + failed_attempt_charged, 8),
+        "difference_from_validator_total_cny": round(
+            completed_response_charged + failed_attempt_charged - total, 8
+        ),
+        "by_final_status_cny": {
+            status: round(value, 8) for status, value in sorted(by_status.items())
+        },
     }
 
 
@@ -281,9 +489,27 @@ def audit_run(run_dir: Path) -> dict[str, Any]:
         "validator_cny": _sum_cost(validators),
     }
     costs["total_cny"] = round(sum(costs.values()), 8)
+    benchmark_funnel, question_outcomes = _deep_coverage(
+        teachers, screeners, validators, canonical, sft
+    )
+    validator_diagnostics = _validator_diagnostics(screeners, validators)
+    validator_cost_breakdown = _validator_cost_breakdown(validators)
+    prm_strict_labels = _strict_binary_label_counts(
+        record.get("label") for record in prm
+    )
+    validator_prefix_labels = [
+        step.get("prefix_label")
+        for result in validator_results
+        for step in result["steps"]
+    ]
+    prm_non_integer_trajectories = {
+        str(record.get("trajectory_id"))
+        for record in prm
+        if not (type(record.get("label")) is int and record.get("label") in {0, 1})
+    }
 
     report: dict[str, Any] = {
-        "schema_version": "medtrace.cot-pilot-audit.v1",
+        "schema_version": "medtrace.cot-pilot-audit.v2",
         "created_at_utc": datetime.now(timezone.utc).isoformat(),
         "contains_private_text": False,
         "run_identity": {
@@ -305,7 +531,11 @@ def audit_run(run_dir: Path) -> dict[str, Any]:
             "sft_records": len(sft),
             "prm_records": len(prm),
         },
-        "coverage": _coverage(metadata, teachers, canonical, sft),
+        "coverage": {
+            **_coverage(metadata, teachers, canonical, sft),
+            "question_outcomes": question_outcomes,
+            "by_benchmark": benchmark_funnel,
+        },
         "teacher": {
             "status": _counts(event.get("status") for event in teachers),
             "attempts": _counts(event.get("attempts") for event in teachers),
@@ -327,6 +557,9 @@ def audit_run(run_dir: Path) -> dict[str, Any]:
             "trajectory_label": _counts(
                 result["trajectory_label"] for result in validator_results
             ),
+            "strict_trajectory_label_counts": _strict_binary_label_counts(
+                result["trajectory_label"] for result in validator_results
+            ),
             "problem_status": _counts(
                 result["problem_status"] for result in validator_results
             ),
@@ -341,9 +574,23 @@ def audit_run(run_dir: Path) -> dict[str, Any]:
             "routed_provider": _counts(
                 (event.get("usage") or {}).get("routed_provider") for event in validators
             ),
+            "strict_prefix_label_counts": _strict_binary_label_counts(
+                validator_prefix_labels
+            ),
+            "diagnostics": validator_diagnostics,
+            "cost_breakdown": validator_cost_breakdown,
         },
         "prm": {
             "labels": _counts(record.get("label") for record in prm),
+            "strict_label_counts": prm_strict_labels,
+            "records_with_non_integer_binary_label": sum(
+                not (type(record.get("label")) is int and record.get("label") in {0, 1})
+                for record in prm
+            ),
+            "trajectories_with_non_integer_binary_label": len(
+                prm_non_integer_trajectories
+            ),
+            "strict_label_quality_passed": not prm_non_integer_trajectories,
             "error_codes": dict(
                 sorted(
                     Counter(
@@ -402,13 +649,32 @@ def render_markdown(report: dict[str, Any]) -> str:
         "## Coverage and labels",
         "",
         f"- Questions with at least one SFT trajectory: {coverage['questions_with_sft']}/{coverage['expected_questions']}",
+        f"- Question outcomes: `{json.dumps(coverage['question_outcomes'], sort_keys=True)}`",
         f"- Validator trajectory labels: `{json.dumps(validator['trajectory_label'], sort_keys=True)}`",
         f"- PRM prefix labels: `{json.dumps(prm['labels'], sort_keys=True)}`",
+        f"- PRM strict label types: `{json.dumps(prm['strict_label_counts'], sort_keys=True)}`",
+        f"- PRM strict label quality passed: {str(prm['strict_label_quality_passed']).lower()}",
+        "",
+        "## Benchmark-stratified funnel",
+        "",
+        "| Benchmark | Questions | Rule passed | Validator complete | Canonical | SFT | SFT question coverage |",
+        "|---|---:|---:|---:|---:|---:|---:|",
+    ])
+    for benchmark, values in sorted(coverage["by_benchmark"].items()):
+        lines.append(
+            f"| {benchmark} | {values['questions']} | {values['rule_passed']} | "
+            f"{values['validator_complete']} | {values['canonical_trajectories']} | "
+            f"{values['sft_records']} | {values['questions_with_sft']}/{values['questions']} |"
+        )
+    lines.extend([
         "",
         "## Failures and routing",
         "",
         f"- Validator status: `{json.dumps(validator['status'], sort_keys=True)}`",
         f"- Validator error categories by attempt: `{json.dumps(validator['error_categories_by_attempt'], sort_keys=True)}`",
+        f"- Final failure error sequences: `{json.dumps(validator['diagnostics']['final_failure_error_sequences'], sort_keys=True)}`",
+        f"- Retry outcomes: `{json.dumps(validator['diagnostics']['retry_outcomes'], sort_keys=True)}`",
+        f"- Outcomes by screener verdict: `{json.dumps(validator['diagnostics']['outcome_by_screener_verdict'], sort_keys=True)}`",
         f"- Validator routed providers: `{json.dumps(validator['routed_provider'], sort_keys=True)}`",
         "",
         "## Candidate diversity",
@@ -422,6 +688,8 @@ def render_markdown(report: dict[str, Any]) -> str:
         "",
         f"- Teacher: CNY {cost['teacher_cny']:.8f}",
         f"- Validator: CNY {cost['validator_cny']:.8f}",
+        f"- Validator completed-response charge component: CNY {validator['cost_breakdown']['completed_response_charged_cny']:.8f}",
+        f"- Validator failed-attempt charge component: CNY {validator['cost_breakdown']['failed_attempt_charged_cny']:.8f}",
         f"- Total: CNY {cost['total_cny']:.8f} / {cost['stop_limit_cny']:.2f}",
         f"- All structural invariants passed: {str(report['invariants_passed']).lower()}",
         "",
