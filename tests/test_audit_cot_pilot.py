@@ -5,6 +5,7 @@ import unittest
 
 from data_pipeline.audit_cot_pilot import (
     _deep_coverage,
+    _error_detail,
     _strict_binary_label_counts,
     _tokens,
     _validator_cost_breakdown,
@@ -39,6 +40,30 @@ class PilotAuditTests(unittest.TestCase):
             },
         )
 
+    def test_validator_error_details_map_messages_to_safe_fixed_codes(self):
+        cases = {
+            "JSONDecodeError: Unterminated string starting at: line 1":
+                "json_syntax_unterminated_string",
+            "JSONDecodeError: Expecting ',' delimiter: line 1":
+                "json_syntax_missing_comma",
+            "ValueError: validator JSON keys differ: ['private_field_name']":
+                "top_level_keys_differ",
+            "ValueError: validator must return exactly one result per step":
+                "step_count_mismatch",
+            "ValueError: validator step indices are not consecutive":
+                "step_indices_invalid",
+            "ValueError: prefix labels do not become and remain zero after first error":
+                "prefix_label_inconsistent",
+            "ValueError: first_error_step differs from step verdicts":
+                "first_error_step_inconsistent",
+            "ValueError: trajectory_label is inconsistent with validation details":
+                "trajectory_label_inconsistent",
+        }
+        self.assertEqual(
+            {message: _error_detail(message) for message in cases},
+            cases,
+        )
+
     def test_validator_diagnostics_preserve_only_aggregate_error_sequences(self):
         screeners = [
             {"record_id": "private-a", "candidate_index": 0, "result": {"verdict": "pass"}},
@@ -64,7 +89,17 @@ class PilotAuditTests(unittest.TestCase):
             },
         ]
 
-        diagnostics = _validator_diagnostics(screeners, validators)
+        teachers = [
+            {
+                "record_id": "private-a", "candidate_index": 0,
+                "record": {"benchmark": "medqa"},
+            },
+            {
+                "record_id": "private-b", "candidate_index": 0,
+                "record": {"benchmark": "medmcqa"},
+            },
+        ]
+        diagnostics = _validator_diagnostics(teachers, screeners, validators)
         costs = _validator_cost_breakdown(validators)
         serialized = json.dumps({"diagnostics": diagnostics, "costs": costs})
 
@@ -79,6 +114,18 @@ class PilotAuditTests(unittest.TestCase):
         self.assertEqual(
             diagnostics["outcome_by_screener_verdict"],
             {"pass": {"label_1": 1}, "review": {"api_or_parse_error": 1}},
+        )
+        self.assertEqual(
+            diagnostics["final_failure_detail_sequences"],
+            {"trajectory_label_invalid -> IncompleteRead": 1},
+        )
+        self.assertEqual(
+            diagnostics["final_failure_error_details_by_benchmark"],
+            {"medmcqa": {"IncompleteRead": 1, "trajectory_label_invalid": 1}},
+        )
+        self.assertEqual(
+            diagnostics["final_failure_error_details_by_screener_verdict"],
+            {"review": {"IncompleteRead": 1, "trajectory_label_invalid": 1}},
         )
         self.assertEqual(costs["completed_response_charged_cny"], 0.08)
         self.assertEqual(costs["failed_attempt_charged_cny"], 0.13)
@@ -219,6 +266,10 @@ class PilotAuditTests(unittest.TestCase):
             self.assertTrue(report["invariants_passed"])
             self.assertEqual(report["coverage"]["questions_with_sft"], 1)
             self.assertEqual(report["teacher"]["rule_failure_codes"], {"gold_answer_mismatch": 1})
+            self.assertEqual(
+                report["teacher"]["rule_failure_codes_by_benchmark"],
+                {"medqa": {"gold_answer_mismatch": 1}},
+            )
             self.assertEqual(report["validator"]["routed_provider"], {"Together": 1})
             self.assertEqual(
                 report["prm"]["strict_label_counts"],

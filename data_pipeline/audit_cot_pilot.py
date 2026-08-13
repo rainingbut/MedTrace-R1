@@ -124,6 +124,61 @@ def _error_category(error: str) -> str:
     return exception
 
 
+def _error_detail(error: str) -> str:
+    """Map a preserved exception message to a stable code without emitting it."""
+
+    exception = error.partition(":")[0].strip() or "UnknownError"
+    lowered = error.casefold()
+    if "usage.cost" in lowered:
+        return "missing_provider_cost"
+    if exception == "JSONDecodeError":
+        syntax_patterns = (
+            ("unterminated string", "json_syntax_unterminated_string"),
+            ("expecting property name", "json_syntax_property_name"),
+            ("expecting ',' delimiter", "json_syntax_missing_comma"),
+            ("expecting ':' delimiter", "json_syntax_missing_colon"),
+            ("expecting value", "json_syntax_missing_value"),
+            ("extra data", "json_syntax_extra_data"),
+            ("invalid \\escape", "json_syntax_invalid_escape"),
+            ("invalid control character", "json_syntax_control_character"),
+        )
+        return next(
+            (code for pattern, code in syntax_patterns if pattern in lowered),
+            "json_syntax_other",
+        )
+    if exception == "ValueError":
+        contract_patterns = (
+            ("chat completion response has no text content", "response_no_text_content"),
+            ("judge response must be one json object", "top_level_not_object"),
+            ("validator json keys differ", "top_level_keys_differ"),
+            ("invalid trajectory_label", "trajectory_label_invalid"),
+            ("answer_consistent must be boolean", "answer_consistent_not_boolean"),
+            ("invalid problem_status", "problem_status_invalid"),
+            (
+                "validator must return exactly one result per step",
+                "step_count_mismatch",
+            ),
+            ("validator step keys differ", "step_keys_differ"),
+            ("validator step indices are not consecutive", "step_indices_invalid"),
+            ("invalid local_verdict", "local_verdict_invalid"),
+            (
+                "prefix labels do not become and remain zero after first error",
+                "prefix_label_inconsistent",
+            ),
+            ("invalid validator step details", "step_details_invalid"),
+            ("first_error_step differs from step verdicts", "first_error_step_inconsistent"),
+            (
+                "trajectory_label is inconsistent with validation details",
+                "trajectory_label_inconsistent",
+            ),
+        )
+        return next(
+            (code for pattern, code in contract_patterns if pattern in lowered),
+            "response_contract_other",
+        )
+    return _error_category(error)
+
+
 def _trajectory_text(event: dict[str, Any]) -> str:
     rule = event.get("rule_check") or {}
     return " ".join(str(step) for step in rule.get("steps") or [])
@@ -333,28 +388,59 @@ def _deep_coverage(
 
 
 def _validator_diagnostics(
-    screeners: list[dict[str, Any]], validators: list[dict[str, Any]]
+    teachers: list[dict[str, Any]],
+    screeners: list[dict[str, Any]],
+    validators: list[dict[str, Any]],
 ) -> dict[str, Any]:
+    teacher_by_key = {_event_key(event): event for event in teachers}
     screener_by_key = {_event_key(event): event for event in screeners}
     final_failure_sequences: Counter[str] = Counter()
+    final_failure_detail_sequences: Counter[str] = Counter()
     all_error_sequences: Counter[str] = Counter()
+    all_error_detail_sequences: Counter[str] = Counter()
     retry_outcomes: Counter[str] = Counter()
     first_error_outcomes: Counter[str] = Counter()
+    first_error_detail_outcomes: Counter[str] = Counter()
     outcome_by_screener: dict[str, Counter[str]] = defaultdict(Counter)
+    details_by_benchmark: dict[str, Counter[str]] = defaultdict(Counter)
+    final_failure_details_by_benchmark: dict[str, Counter[str]] = defaultdict(Counter)
+    details_by_screener: dict[str, Counter[str]] = defaultdict(Counter)
+    final_failure_details_by_screener: dict[str, Counter[str]] = defaultdict(Counter)
 
     for event in validators:
         categories = [_error_category(str(error)) for error in event.get("errors") or []]
+        details = [_error_detail(str(error)) for error in event.get("errors") or []]
         sequence = " -> ".join(categories) if categories else "none"
+        detail_sequence = " -> ".join(details) if details else "none"
         status = str(event.get("status") or "unknown")
+        teacher = teacher_by_key.get(_event_key(event))
+        benchmark = (
+            str((teacher.get("record") or {}).get("benchmark") or "unknown")
+            if teacher
+            else "unknown"
+        )
+        screener = screener_by_key.get(_event_key(event))
+        verdict = (
+            str((screener.get("result") or {}).get("verdict") or "unknown")
+            if screener
+            else "missing"
+        )
         if categories:
             all_error_sequences[sequence] += 1
+            all_error_detail_sequences[detail_sequence] += 1
             first_error_outcomes[f"{categories[0]} -> {status}"] += 1
+            first_error_detail_outcomes[f"{details[0]} -> {status}"] += 1
+            for detail in details:
+                details_by_benchmark[benchmark][detail] += 1
+                details_by_screener[verdict][detail] += 1
         if status != "complete":
             final_failure_sequences[sequence] += 1
+            final_failure_detail_sequences[detail_sequence] += 1
+            for detail in details:
+                final_failure_details_by_benchmark[benchmark][detail] += 1
+                final_failure_details_by_screener[verdict][detail] += 1
         retry_outcomes[f"attempts={int(event.get('attempts') or 0)} -> {status}"] += 1
 
-        screener = screener_by_key.get(_event_key(event))
-        verdict = str((screener.get("result") or {}).get("verdict") or "unknown") if screener else "missing"
         if status == "complete":
             label = (event.get("result") or {}).get("trajectory_label")
             if type(label) is int and label in {0, 1}:
@@ -369,12 +455,35 @@ def _validator_diagnostics(
 
     return {
         "final_failure_error_sequences": dict(sorted(final_failure_sequences.items())),
+        "final_failure_detail_sequences": dict(
+            sorted(final_failure_detail_sequences.items())
+        ),
         "all_error_sequences": dict(sorted(all_error_sequences.items())),
+        "all_error_detail_sequences": dict(sorted(all_error_detail_sequences.items())),
         "retry_outcomes": dict(sorted(retry_outcomes.items())),
         "first_error_to_final_status": dict(sorted(first_error_outcomes.items())),
+        "first_error_detail_to_final_status": dict(
+            sorted(first_error_detail_outcomes.items())
+        ),
         "outcome_by_screener_verdict": {
             verdict: dict(sorted(counts.items()))
             for verdict, counts in sorted(outcome_by_screener.items())
+        },
+        "error_details_by_benchmark": {
+            benchmark: dict(sorted(counts.items()))
+            for benchmark, counts in sorted(details_by_benchmark.items())
+        },
+        "final_failure_error_details_by_benchmark": {
+            benchmark: dict(sorted(counts.items()))
+            for benchmark, counts in sorted(final_failure_details_by_benchmark.items())
+        },
+        "error_details_by_screener_verdict": {
+            verdict: dict(sorted(counts.items()))
+            for verdict, counts in sorted(details_by_screener.items())
+        },
+        "final_failure_error_details_by_screener_verdict": {
+            verdict: dict(sorted(counts.items()))
+            for verdict, counts in sorted(final_failure_details_by_screener.items())
         },
     }
 
@@ -456,6 +565,12 @@ def audit_run(run_dir: Path) -> dict[str, Any]:
         for event in teachers
         for code in (event.get("rule_check") or {}).get("failure_codes") or []
     )
+    teacher_failures_by_benchmark: dict[str, Counter[str]] = defaultdict(Counter)
+    for event in teachers:
+        benchmark = str((event.get("record") or {}).get("benchmark") or "unknown")
+        teacher_failures_by_benchmark[benchmark].update(
+            (event.get("rule_check") or {}).get("failure_codes") or []
+        )
     screener_codes = Counter(
         code
         for event in screeners
@@ -492,7 +607,7 @@ def audit_run(run_dir: Path) -> dict[str, Any]:
     benchmark_funnel, question_outcomes = _deep_coverage(
         teachers, screeners, validators, canonical, sft
     )
-    validator_diagnostics = _validator_diagnostics(screeners, validators)
+    validator_diagnostics = _validator_diagnostics(teachers, screeners, validators)
     validator_cost_breakdown = _validator_cost_breakdown(validators)
     prm_strict_labels = _strict_binary_label_counts(
         record.get("label") for record in prm
@@ -509,7 +624,7 @@ def audit_run(run_dir: Path) -> dict[str, Any]:
     }
 
     report: dict[str, Any] = {
-        "schema_version": "medtrace.cot-pilot-audit.v2",
+        "schema_version": "medtrace.cot-pilot-audit.v3",
         "created_at_utc": datetime.now(timezone.utc).isoformat(),
         "contains_private_text": False,
         "run_identity": {
@@ -540,6 +655,10 @@ def audit_run(run_dir: Path) -> dict[str, Any]:
             "status": _counts(event.get("status") for event in teachers),
             "attempts": _counts(event.get("attempts") for event in teachers),
             "rule_failure_codes": dict(sorted(teacher_failures.items())),
+            "rule_failure_codes_by_benchmark": {
+                benchmark: dict(sorted(counts.items()))
+                for benchmark, counts in sorted(teacher_failures_by_benchmark.items())
+            },
         },
         "screener": {
             "status": _counts(event.get("status") for event in screeners),
@@ -673,6 +792,9 @@ def render_markdown(report: dict[str, Any]) -> str:
         f"- Validator status: `{json.dumps(validator['status'], sort_keys=True)}`",
         f"- Validator error categories by attempt: `{json.dumps(validator['error_categories_by_attempt'], sort_keys=True)}`",
         f"- Final failure error sequences: `{json.dumps(validator['diagnostics']['final_failure_error_sequences'], sort_keys=True)}`",
+        f"- Final failure detail sequences: `{json.dumps(validator['diagnostics']['final_failure_detail_sequences'], sort_keys=True)}`",
+        f"- Final failure details by benchmark: `{json.dumps(validator['diagnostics']['final_failure_error_details_by_benchmark'], sort_keys=True)}`",
+        f"- Final failure details by screener verdict: `{json.dumps(validator['diagnostics']['final_failure_error_details_by_screener_verdict'], sort_keys=True)}`",
         f"- Retry outcomes: `{json.dumps(validator['diagnostics']['retry_outcomes'], sort_keys=True)}`",
         f"- Outcomes by screener verdict: `{json.dumps(validator['diagnostics']['outcome_by_screener_verdict'], sort_keys=True)}`",
         f"- Validator routed providers: `{json.dumps(validator['routed_provider'], sort_keys=True)}`",
