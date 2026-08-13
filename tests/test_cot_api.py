@@ -6,6 +6,7 @@ from data_pipeline.cot_api import (
     parse_json_object,
     validate_screener_result,
     validate_validator_result,
+    validator_response_format,
 )
 
 
@@ -66,6 +67,43 @@ class JsonJudgeContractTests(unittest.TestCase):
         value["steps"][2]["prefix_label"] = 1
         with self.assertRaisesRegex(ValueError, "remain zero"):
             validate_validator_result(value, 3)
+
+    def test_validator_rejects_boolean_binary_labels_and_unknown_error_codes(self):
+        value = {
+            "trajectory_label": 1,
+            "first_error_step": None,
+            "answer_consistent": True,
+            "problem_status": "ok",
+            "steps": [{
+                "index": 0, "local_verdict": "correct", "prefix_label": True,
+                "error_codes": [], "concise_reason": "ok",
+            }],
+        }
+        with self.assertRaisesRegex(ValueError, "prefix_label"):
+            validate_validator_result(value, 1)
+        value["steps"][0]["prefix_label"] = 1
+        value["trajectory_label"] = True
+        with self.assertRaisesRegex(ValueError, "trajectory_label"):
+            validate_validator_result(value, 1)
+        value["trajectory_label"] = 1
+        value["steps"][0]["error_codes"] = ["not_frozen"]
+        with self.assertRaisesRegex(ValueError, "step details"):
+            validate_validator_result(value, 1)
+
+    def test_validator_json_schema_is_strict_and_step_bounded(self):
+        response_format = validator_response_format(3)
+        self.assertEqual(response_format["type"], "json_schema")
+        contract = response_format["json_schema"]
+        self.assertTrue(contract["strict"])
+        schema = contract["schema"]
+        self.assertFalse(schema["additionalProperties"])
+        steps = schema["properties"]["steps"]
+        self.assertEqual(steps["minItems"], 3)
+        self.assertEqual(steps["maxItems"], 3)
+        self.assertEqual(
+            steps["items"]["properties"]["prefix_label"],
+            {"type": "integer", "enum": [0, 1]},
+        )
 
 
 if __name__ == "__main__":

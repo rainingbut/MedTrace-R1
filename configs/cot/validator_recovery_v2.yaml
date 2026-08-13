@@ -1,0 +1,40 @@
+schema_version: medtrace.cot.validator-recovery.v2
+execution_enabled: false
+
+source_run_dir: results/cot/pilot_v1_real
+output_subdir: validator_recovery_v2
+source_identity:
+  config_sha256: 168243919b2912ba76b1e70d4228d011cd18b2a2d3583ed9f026b712677ca36f
+  questions_sha256: eb7f4c2ba71d4651929af89558bfa64c295dcdab902e218483f931c040df9f76
+  generation_git_commit: 461a95cb28837f8072b6fc3d927f57fd8fb80f87
+  expected_failed_validator_events: 25
+
+canary:
+  total: 6
+  by_benchmark:
+    medqa: 4
+    medmcqa: 2
+  selection_method: benchmark_stratified_error_detail_round_robin
+
+validator:
+  provider: openrouter
+  model_id: deepseek/deepseek-v4-pro
+  provider_version: OpenRouter-DeepSeek-V4-Pro
+  base_url: https://openrouter.ai/api/v1
+  api_key_env: OPENROUTER_API_KEY
+  prompt_version: validator_v2
+  reasoning_effort: high
+  require_zero_data_retention: true
+  allow_provider_fallbacks: true
+  response_format: json_schema_strict
+  temperature: 0
+  max_output_tokens: 8192
+  max_retries: 0
+  timeout_seconds: 600
+
+budget:
+  api_hard_cap_cny_equivalent: 5
+  stop_before_limit_fraction: 0.90
+  usd_to_cny: 7.20
+  validator_usd_per_million_input_tokens: 2.10
+  validator_usd_per_million_output_tokens: 4.40

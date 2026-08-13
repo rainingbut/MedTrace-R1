@@ -22,6 +22,7 @@ from data_pipeline.cot_api import (
 )
 from data_pipeline.cot_budget import BudgetLedger, request_cost_cny
 from data_pipeline.cot_config import validate_pilot_config
+from data_pipeline.cot_diagnostics import error_category, error_detail
 from data_pipeline.cot_preflight import check_real_environment, redact_preflight
 from data_pipeline.cot_prompts import (
     SCREENER_SYSTEM_PROMPT,
@@ -152,8 +153,42 @@ def _call_with_budget(
     pricing: dict[str, Any],
     api_key: str,
     response_format_json: bool,
+    response_format: dict[str, Any] | None = None,
     validate: Callable[[dict[str, Any]], dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
+    def attempt_diagnostic(
+        *,
+        attempt_number: int,
+        result: ChatResult | None,
+        status: str,
+        error: str | None = None,
+    ) -> dict[str, Any]:
+        return {
+            "attempt": attempt_number,
+            "status": status,
+            "error_category": error_category(error) if error else None,
+            "error_detail": error_detail(error) if error else None,
+            "request_id": result.request_id if result else None,
+            "finish_reason": result.finish_reason if result else None,
+            "routed_provider": result.routed_provider if result else None,
+            "input_tokens": result.input_tokens if result else None,
+            "output_tokens": result.output_tokens if result else None,
+            "reasoning_tokens": result.reasoning_tokens if result else None,
+            "provider_cost_usd": result.billed_cost_usd if result else None,
+            "content_present": bool(result and result.content),
+            "content_characters": len(result.content or "") if result else 0,
+            "content_sha256": (
+                hashlib.sha256((result.content or "").encode("utf-8")).hexdigest()
+                if result and result.content
+                else None
+            ),
+            "reasoning_content_sha256": (
+                hashlib.sha256(result.reasoning_content.encode("utf-8")).hexdigest()
+                if result and result.reasoning_content
+                else None
+            ),
+        }
+
     estimated_input = _estimated_input_tokens(system_prompt, user_prompt)
     estimated_output = int(config["max_output_tokens"])
     estimated_cost = request_cost_cny(
@@ -161,10 +196,12 @@ def _call_with_budget(
     )
     attempts = int(config.get("max_retries", 0)) + 1
     errors: list[str] = []
+    attempt_diagnostics: list[dict[str, Any]] = []
     charged_for_errors = 0.0
     for attempt in range(attempts):
         ledger.assert_can_spend(estimated_cost)
         attempt_cost = estimated_cost
+        result: ChatResult | None = None
         try:
             extras: dict[str, Any] = {}
             if role == "teacher":
@@ -197,8 +234,10 @@ def _call_with_budget(
                 max_tokens=int(config["max_output_tokens"]),
                 timeout_seconds=float(config["timeout_seconds"]),
                 response_format_json=response_format_json,
+                response_format=response_format,
                 extra_body=extras,
             )
+            content = result.content
             (
                 input_tokens,
                 output_tokens,
@@ -210,17 +249,24 @@ def _call_with_budget(
                 role,
                 result,
                 estimated_input,
-                max(1, len(result.content) // 4),
+                max(1, len(content or "") // 4),
                 pricing,
             )
             attempt_cost = cost
-            parsed = parse_json_object(result.content) if response_format_json else None
+            if not isinstance(content, str) or not content.strip():
+                raise ValueError("chat completion response has no text content")
+            parsed = parse_json_object(content) if response_format_json else None
             if parsed is not None and validate is not None:
                 parsed = validate(parsed)
             ledger.record(cost)
+            attempt_diagnostics.append(attempt_diagnostic(
+                attempt_number=attempt + 1,
+                result=result,
+                status="complete",
+            ))
             return {
                 "status": "complete",
-                "content": result.content,
+                "content": content,
                 "reasoning_content_sha256": (
                     hashlib.sha256(result.reasoning_content.encode("utf-8")).hexdigest()
                     if result.reasoning_content
@@ -245,11 +291,19 @@ def _call_with_budget(
                 },
                 "attempts": attempt + 1,
                 "errors": errors,
+                "attempt_diagnostics": attempt_diagnostics,
             }
         except Exception as exc:  # every failed attempt is preserved and budgeted
             charged_for_errors += attempt_cost
             ledger.record(attempt_cost)
-            errors.append(f"{type(exc).__name__}: {exc}")
+            error = f"{type(exc).__name__}: {exc}"
+            errors.append(error)
+            attempt_diagnostics.append(attempt_diagnostic(
+                attempt_number=attempt + 1,
+                result=result,
+                status="failed",
+                error=error,
+            ))
             if attempt + 1 < attempts:
                 time.sleep(min(2**attempt, 8))
     return {
@@ -271,6 +325,7 @@ def _call_with_budget(
         },
         "attempts": attempts,
         "errors": errors,
+        "attempt_diagnostics": attempt_diagnostics,
     }
 
 

@@ -10,6 +10,7 @@ from data_pipeline.cot_prompts import (
     build_screener_prompt,
     build_teacher_prompt,
     build_validator_prompt,
+    build_validator_recovery_prompt,
 )
 
 
@@ -41,6 +42,16 @@ class PromptTests(unittest.TestCase):
         self.assertIn("prefix_label", prompt)
         self.assertIn("not given any earlier screener verdict", prompt)
         self.assertIn("medical_fact_error", prompt)
+
+    def test_validator_recovery_prompt_has_safe_feedback_without_label_example(self):
+        prompt = build_validator_recovery_prompt(
+            self.question, self.choices, "B", ["A claim"], "B",
+            ["response_no_text_content"],
+        )
+        self.assertIn("response_no_text_content", prompt)
+        self.assertIn("strict JSON Schema", prompt)
+        self.assertIn("not booleans", prompt)
+        self.assertNotIn('"trajectory_label": 1', prompt)
 
     def test_failure_taxonomy_is_unique(self):
         self.assertEqual(len(ALL_ERROR_CODES), len(set(ALL_ERROR_CODES)))

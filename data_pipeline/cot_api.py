@@ -9,10 +9,12 @@ import os
 from typing import Any
 from urllib import request as urllib_request
 
+from data_pipeline.cot_errors import ALL_ERROR_CODES
+
 
 @dataclass(frozen=True)
 class ChatResult:
-    content: str
+    content: str | None
     reasoning_content: str | None
     request_id: str | None
     finish_reason: str | None
@@ -20,6 +22,7 @@ class ChatResult:
     output_tokens: int | None
     billed_cost_usd: float | None
     routed_provider: str | None
+    reasoning_tokens: int | None = None
 
 
 def require_api_key(environment_name: str, *, allow_empty: bool = False) -> str:
@@ -43,6 +46,7 @@ def post_chat_completion(
     timeout_seconds: float,
     top_p: float | None = None,
     response_format_json: bool = False,
+    response_format: dict[str, Any] | None = None,
     extra_body: dict[str, Any] | None = None,
 ) -> ChatResult:
     payload: dict[str, Any] = {
@@ -58,7 +62,9 @@ def post_chat_completion(
         payload["max_tokens"] = max_tokens
     if top_p is not None:
         payload["top_p"] = top_p
-    if response_format_json:
+    if response_format is not None:
+        payload["response_format"] = response_format
+    elif response_format_json:
         payload["response_format"] = {"type": "json_object"}
     if extra_body:
         payload.update(extra_body)
@@ -80,14 +86,14 @@ def post_chat_completion(
     message = choice["message"]
     usage = body.get("usage") or {}
     content = message.get("content")
-    if not isinstance(content, str):
-        raise ValueError("chat completion response has no text content")
+    if content is not None and not isinstance(content, str):
+        raise ValueError("chat completion response content has invalid type")
     billed_cost = _optional_float(usage.get("cost"))
     if billed_cost is not None and (not math.isfinite(billed_cost) or billed_cost < 0):
         raise ValueError("chat completion usage.cost must be finite and non-negative")
     return ChatResult(
         content=content,
-        reasoning_content=message.get("reasoning_content"),
+        reasoning_content=message.get("reasoning_content") or message.get("reasoning"),
         request_id=str(body.get("id") or header_request_id or "") or None,
         finish_reason=choice.get("finish_reason"),
         input_tokens=_optional_int(usage.get("prompt_tokens", usage.get("input_tokens"))),
@@ -96,6 +102,9 @@ def post_chat_completion(
         ),
         billed_cost_usd=billed_cost,
         routed_provider=str(body.get("provider") or "") or None,
+        reasoning_tokens=_optional_int(
+            (usage.get("completion_tokens_details") or {}).get("reasoning_tokens")
+        ),
     )
 
 
@@ -156,7 +165,7 @@ def validate_validator_result(value: dict[str, Any], step_count: int) -> dict[st
     }
     if set(value) != required:
         raise ValueError(f"validator JSON keys differ: {sorted(set(value) ^ required)}")
-    if value["trajectory_label"] not in {0, 1}:
+    if type(value["trajectory_label"]) is not int or value["trajectory_label"] not in {0, 1}:
         raise ValueError("invalid trajectory_label")
     if not isinstance(value["answer_consistent"], bool):
         raise ValueError("answer_consistent must be boolean")
@@ -177,20 +186,31 @@ def validate_validator_result(value: dict[str, Any], step_count: int) -> dict[st
         }
         if not isinstance(step, dict) or set(step) != required_step:
             raise ValueError("validator step keys differ from contract")
-        if step["index"] != index:
+        if type(step["index"]) is not int or step["index"] != index:
             raise ValueError("validator step indices are not consecutive")
         if step["local_verdict"] not in {"correct", "incorrect", "uncertain"}:
             raise ValueError("invalid local_verdict")
         if step["local_verdict"] != "correct" and first_bad is None:
             first_bad = index
             expected_prefix = 0
+        if type(step["prefix_label"]) is not int or step["prefix_label"] not in {0, 1}:
+            raise ValueError("invalid prefix_label")
         if step["prefix_label"] != expected_prefix:
             raise ValueError("prefix labels do not become and remain zero after first error")
-        if not isinstance(step["error_codes"], list) or not isinstance(
-            step["concise_reason"], str
+        if (
+            not isinstance(step["error_codes"], list)
+            or not all(
+                isinstance(code, str) and code in ALL_ERROR_CODES
+                for code in step["error_codes"]
+            )
+            or len(step["error_codes"]) != len(set(step["error_codes"]))
+            or not isinstance(step["concise_reason"], str)
         ):
             raise ValueError("invalid validator step details")
-    if value["first_error_step"] != first_bad:
+    first_error_step = value["first_error_step"]
+    if first_error_step is not None and type(first_error_step) is not int:
+        raise ValueError("first_error_step must be integer or null")
+    if first_error_step != first_bad:
         raise ValueError("first_error_step differs from step verdicts")
     expected_label = int(
         first_bad is None
@@ -200,6 +220,69 @@ def validate_validator_result(value: dict[str, Any], step_count: int) -> dict[st
     if value["trajectory_label"] != expected_label:
         raise ValueError("trajectory_label is inconsistent with validation details")
     return value
+
+
+def validator_response_format(step_count: int) -> dict[str, Any]:
+    """Return an OpenRouter strict JSON Schema for one validator response."""
+
+    if type(step_count) is not int or not 1 <= step_count <= 64:
+        raise ValueError("validator schema step_count must be an integer in [1, 64]")
+    error_codes = list(ALL_ERROR_CODES)
+    step_schema = {
+        "type": "object",
+        "additionalProperties": False,
+        "required": [
+            "index", "local_verdict", "prefix_label", "error_codes", "concise_reason"
+        ],
+        "properties": {
+            "index": {"type": "integer", "minimum": 0, "maximum": step_count - 1},
+            "local_verdict": {
+                "type": "string", "enum": ["correct", "incorrect", "uncertain"]
+            },
+            "prefix_label": {"type": "integer", "enum": [0, 1]},
+            "error_codes": {
+                "type": "array",
+                "items": {"type": "string", "enum": error_codes},
+                "uniqueItems": True,
+            },
+            "concise_reason": {"type": "string"},
+        },
+    }
+    schema = {
+        "type": "object",
+        "additionalProperties": False,
+        "required": [
+            "trajectory_label", "first_error_step", "answer_consistent",
+            "problem_status", "steps",
+        ],
+        "properties": {
+            "trajectory_label": {"type": "integer", "enum": [0, 1]},
+            "first_error_step": {
+                "anyOf": [
+                    {"type": "integer", "minimum": 0, "maximum": step_count - 1},
+                    {"type": "null"},
+                ]
+            },
+            "answer_consistent": {"type": "boolean"},
+            "problem_status": {
+                "type": "string", "enum": ["ok", "ambiguous", "bad_gold"]
+            },
+            "steps": {
+                "type": "array",
+                "minItems": step_count,
+                "maxItems": step_count,
+                "items": step_schema,
+            },
+        },
+    }
+    return {
+        "type": "json_schema",
+        "json_schema": {
+            "name": f"validator_result_{step_count}_steps",
+            "strict": True,
+            "schema": schema,
+        },
+    }
 
 
 def _optional_int(value: object) -> int | None:

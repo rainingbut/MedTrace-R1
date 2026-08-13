@@ -10,6 +10,7 @@ from data_pipeline.cot_errors import ALL_ERROR_CODES
 TEACHER_PROMPT_VERSION = "teacher_v1"
 SCREENER_PROMPT_VERSION = "screener_v1"
 VALIDATOR_PROMPT_VERSION = "validator_v1"
+VALIDATOR_RECOVERY_PROMPT_VERSION = "validator_v2"
 
 TEACHER_SYSTEM_PROMPT = """You generate concise, auditable reasoning for medical multiple-choice questions. Solve the question independently. Do not claim to have seen a reference answer or external source."""
 
@@ -98,3 +99,30 @@ and steps (array of objects containing index, local_verdict, prefix_label,
 error_codes, concise_reason). Allowed error_codes: {_error_code_contract()}.
 A trajectory can receive label 1 only if every step is
 correct, the problem status is ok, and its predicted answer equals the gold answer."""
+
+
+def build_validator_recovery_prompt(
+    question: str,
+    choices: dict[str, str],
+    gold_answer: str,
+    steps: list[str],
+    predicted_answer: str,
+    previous_error_details: list[str],
+) -> str:
+    """Build validator_v2 with privacy-safe feedback from earlier failed attempts."""
+
+    base = build_validator_prompt(
+        question, choices, gold_answer, steps, predicted_answer
+    )
+    safe_details = sorted(set(str(value) for value in previous_error_details))
+    return f"""{base}
+
+This is a fresh recovery verification. Earlier attempts failed only these output
+checks: {json.dumps(safe_details)}. Re-evaluate the medicine independently; do not
+copy, repair, or infer any earlier verdict.
+
+The response is enforced by a strict JSON Schema. Use JSON-native integers 0/1,
+not booleans, for trajectory_label and prefix_label. Return exactly {len(steps)}
+step objects with indices 0 through {len(steps) - 1}. Do not use markdown fences.
+The schema, not an example verdict, defines the field shape. Populate every field
+from your independent assessment and emit one complete JSON object only."""
