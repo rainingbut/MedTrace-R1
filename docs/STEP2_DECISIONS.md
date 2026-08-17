@@ -54,3 +54,29 @@ Machine-readable settings are in `configs/cot/pilot_v1.yaml`; the canonical
 record contract is `schemas/cot_trajectory_v1.schema.json`, and the private
 training-source manifest contract is
 `schemas/training_source_manifest_v1.schema.json`.
+
+## Post-pilot PRM amendment (2026-08-17)
+
+The original frozen pilot remains immutable. Its validator recovery fixed the
+transport/JSON contract failure mode, but the observed PRM labels are severely
+imbalanced at approximately 723 positive and 4 negative prefix records. Six
+validator v2 recovery canaries were contract-valid and all positive; recovery
+therefore is not treated as a negative-data strategy.
+
+The user approved only the offline first phase of PRM negative enrichment:
+
+- audit structurally usable answer-mismatch and screener-reject candidates;
+- assign no automatic negative label to either source;
+- define a private candidate contract with no label field;
+- accept a strict process negative only when an independent validator returns
+  `problem_status=ok`, a concrete first error, and `local_verdict=incorrect` at
+  that step;
+- route uncertain, ambiguous, and bad-gold outcomes to human review;
+- exclude answer-only inconsistency from PRM step negatives;
+- keep all original pilot artifacts immutable and all private records ignored.
+
+This approval does not cover GPU inference, API calls, the remaining validator
+recovery, a 24-case canary, medium-scale generation, or full-data generation.
+The detailed policy is in `docs/STEP2_PRM_NEGATIVE_ENRICHMENT_PLAN.md` and the
+machine-readable settings are in
+`configs/cot/prm_negative_enrichment_v1.yaml`.

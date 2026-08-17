@@ -1,0 +1,119 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://medtrace.local/schemas/prm_negative_candidate_v1.schema.json",
+  "title": "MEDTRACE-R1 private PRM negative candidate v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "candidate_id",
+    "source",
+    "origin",
+    "parent_trajectory_id",
+    "trajectory",
+    "provenance",
+    "intended_error_step",
+    "disposition"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "medtrace.prm-negative-candidate.v1"
+    },
+    "candidate_id": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["dataset", "source_id", "content_sha256", "split"],
+      "properties": {
+        "dataset": {"enum": ["medqa", "medmcqa"]},
+        "source_id": {"type": "string", "minLength": 1},
+        "content_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "split": {"const": "train"}
+      }
+    },
+    "origin": {
+      "enum": [
+        "existing_teacher_answer_mismatch",
+        "existing_screener_reject",
+        "local_student",
+        "controlled_single_error"
+      ]
+    },
+    "parent_trajectory_id": {
+      "anyOf": [
+        {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+        {"type": "null"}
+      ]
+    },
+    "trajectory": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["steps", "predicted_answer"],
+      "properties": {
+        "steps": {
+          "type": "array",
+          "minItems": 3,
+          "maxItems": 8,
+          "items": {"type": "string", "minLength": 1}
+        },
+        "predicted_answer": {
+          "type": "string",
+          "pattern": "^[A-Z]$"
+        }
+      }
+    },
+    "provenance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "generator_role",
+        "model_id",
+        "model_revision",
+        "prompt_version",
+        "source_run_git_commit"
+      ],
+      "properties": {
+        "generator_role": {
+          "enum": ["existing_teacher", "local_student", "controlled_mutator"]
+        },
+        "model_id": {"type": "string", "minLength": 1},
+        "model_revision": {"type": ["string", "null"]},
+        "prompt_version": {"type": "string", "minLength": 1},
+        "source_run_git_commit": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{40}$"
+        }
+      }
+    },
+    "intended_error_step": {
+      "anyOf": [
+        {"type": "integer", "minimum": 0, "maximum": 7},
+        {"type": "null"}
+      ]
+    },
+    "disposition": {
+      "const": "requires_independent_validation"
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {"origin": {"const": "controlled_single_error"}}
+      },
+      "then": {
+        "properties": {
+          "parent_trajectory_id": {"type": "string"},
+          "intended_error_step": {"type": "integer"}
+        }
+      },
+      "else": {
+        "properties": {
+          "intended_error_step": {"type": "null"}
+        }
+      }
+    }
+  ]
+}

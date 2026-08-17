@@ -2,6 +2,32 @@
 
 更新时间：2026-08-13（Asia/Shanghai）
 
+## 0. 2026-08-17 最新状态（优先于下文旧状态）
+
+下文保留了 40 题审计前后的历史操作记录。本节是当前工作的最新入口：
+
+- 当前开发基线为 `d7da6f5f4f37a75e2d7275ff14995e84c36dfb9d`；
+- validator v2 recovery 已修复原25条失败响应的空内容/JSON契约问题；
+- 6条 recovery canary 全部完成且结构合法，但全部判为正；
+- 原 pilot PRM 严格标签约为723正、4负，尚未达到 PRM 训练就绪状态；
+- 根因是原候选漏斗在强验证前排除了答案错误和 screener reject 候选；
+- 用户已批准 PRM 负样本增广的第一阶段离线工作；
+- 第一阶段不包含模型调用、API费用、GPU推理、剩余19条 recovery 或新 CoT 生成。
+- 第一阶段实现后的本地完整单元测试为81项全部通过。
+
+当前设计与命令见：
+
+```text
+docs/STEP2_PRM_NEGATIVE_ENRICHMENT_PLAN.md
+configs/cot/prm_negative_enrichment_v1.yaml
+data_pipeline/audit_prm_negative_opportunities.py
+schemas/prm_negative_candidate_v1.schema.json
+```
+
+原始 `results/cot/pilot_v1_real/` 七类核心产物必须保持不变。离线审计只能产生新的
+聚合报告，不得输出题目 ID、题干或轨迹文本。完成本阶段后，必须根据自然候选池的
+真实数量重新提交24条 canary 的确切构成和费用预算，等待用户再次确认。
+
 ## 1. 新会话必须先做什么
 
 新会话开始后，请先完整阅读：

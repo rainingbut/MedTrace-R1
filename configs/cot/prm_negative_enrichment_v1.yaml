@@ -1,0 +1,52 @@
+schema_version: medtrace.cot.prm-negative-enrichment.v1
+execution_enabled: false
+
+source_run_dir: results/cot/pilot_v1_real
+output_subdir: prm_negative_enrichment_v1
+output_stem: prm_negative_opportunity_audit
+original_artifacts_immutable: true
+
+source_identity:
+  questions: 40
+  teacher_events: 160
+  rule_passed: 134
+  canonical_trajectories: 109
+  prm_records: 727
+
+natural_candidate_policy:
+  answer_mismatch_only: requires_independent_validation
+  screener_reject: requires_independent_validation
+  validator_unavailable: recovery_only_not_negative_evidence
+  malformed_or_truncated: exclude
+
+label_policy:
+  label_semantics: prefix_correctness
+  positive_requires:
+    trajectory_label: 1
+    problem_status: ok
+    first_error_step: null
+  negative_requires:
+    trajectory_label: 0
+    problem_status: ok
+    first_error_step: integer
+    first_error_local_verdict: incorrect
+  uncertain_first_error: human_review
+  ambiguous_or_bad_gold: human_review
+  wrong_answer_without_reasoning_error: exclude_from_prm_negative
+  prefixes_before_first_error: 1
+  prefixes_from_first_error: 0
+
+future_canary:
+  requires_separate_user_approval: true
+  target_total: 24
+  target_by_benchmark:
+    medqa: 12
+    medmcqa: 12
+  preferred_origin_targets:
+    existing_natural: 8
+    local_student: 8
+    controlled_single_error: 8
+  transport_and_contract_success_rate: 1.0
+  minimum_distinct_strict_negative_trajectories: 8
+  minimum_human_trajectory_label_accuracy: 0.90
+  minimum_human_exact_first_error_accuracy: 0.80
