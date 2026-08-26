@@ -80,3 +80,11 @@ recovery, a 24-case canary, medium-scale generation, or full-data generation.
 The detailed policy is in `docs/STEP2_PRM_NEGATIVE_ENRICHMENT_PLAN.md` and the
 machine-readable settings are in
 `configs/cot/prm_negative_enrichment_v1.yaml`.
+
+The first aggregate opportunity audit found 11 structurally usable natural
+candidates (7 MedQA and 4 MedMCQA), all from answer mismatch and none from a
+screener reject. It also found one legacy contract-invalid canonical whose six
+derived PRM labels are JSON booleans rather than integer ones. Those records are
+not strict training artifacts. The original files remain immutable; any
+normalization or validator v2 revalidation requires an isolated, auditable
+derivative and a later decision.

@@ -7,6 +7,7 @@ from unittest.mock import patch
 import yaml
 
 from data_pipeline.audit_prm_negative_opportunities import (
+    _quality_status,
     audit_opportunities,
     render_markdown,
 )
@@ -103,6 +104,34 @@ class PrmNegativePolicyTests(unittest.TestCase):
 
 
 class PrmNegativeOpportunityAuditTests(unittest.TestCase):
+    def test_label_quality_failure_is_not_source_integrity_failure(self):
+        canonical = {
+            "strict_contract_valid": 108,
+            "dispositions": {
+                "invalid_contract": 1,
+                "strict_positive": 107,
+                "strict_process_negative": 1,
+            },
+        }
+        sft = {
+            "strict_contract_valid": 107,
+            "dispositions": {"invalid_contract": 1, "strict_positive": 107},
+        }
+        prm = [{"label": 1}, {"label": 0}, {"label": True}]
+
+        quality = _quality_status(canonical, sft, prm)
+
+        self.assertFalse(quality["strict_training_artifacts_passed"])
+        self.assertEqual(
+            quality["failed_checks"],
+            [
+                "canonical_contracts_strict",
+                "prm_labels_are_strict_binary_integers",
+                "sft_contracts_strict",
+            ],
+        )
+        self.assertTrue(quality["requires_normalization_or_revalidation"])
+
     def test_aggregate_audit_finds_candidates_without_leaking_private_data(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -270,6 +299,7 @@ class PrmNegativeOpportunityAuditTests(unittest.TestCase):
             markdown = render_markdown(report)
 
             self.assertTrue(report["integrity"]["passed"])
+            self.assertTrue(report["quality"]["strict_training_artifacts_passed"])
             self.assertEqual(report["natural_opportunities"]["total"], 2)
             self.assertEqual(
                 report["natural_opportunities"]["answer_mismatch_only"], 1
@@ -283,6 +313,7 @@ class PrmNegativeOpportunityAuditTests(unittest.TestCase):
             self.assertEqual(
                 report["prm"]["distinct_trajectories_with_negative_prefix"], 1
             )
+            self.assertEqual(report["prm"]["non_integer_label_records"], 0)
             self.assertNotIn("private-a", serialized)
             self.assertNotIn("secret trajectory", serialized)
             self.assertNotIn("private-a", markdown)

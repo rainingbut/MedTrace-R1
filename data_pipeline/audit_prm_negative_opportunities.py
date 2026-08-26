@@ -206,6 +206,29 @@ def _canonical_summary(records: list[dict[str, Any]]) -> dict[str, Any]:
     }
 
 
+def _quality_status(
+    canonical_summary: dict[str, Any],
+    sft_summary: dict[str, Any],
+    prm: list[dict[str, Any]],
+) -> dict[str, Any]:
+    checks = {
+        "canonical_contracts_strict": canonical_summary["strict_contract_valid"]
+        == sum(canonical_summary["dispositions"].values()),
+        "sft_contracts_strict": sft_summary["strict_contract_valid"]
+        == sum(sft_summary["dispositions"].values()),
+        "prm_labels_are_strict_binary_integers": all(
+            type(record.get("label")) is int and record["label"] in {0, 1}
+            for record in prm
+        ),
+    }
+    return {
+        "strict_training_artifacts_passed": all(checks.values()),
+        "checks": checks,
+        "failed_checks": sorted(name for name, passed in checks.items() if not passed),
+        "requires_normalization_or_revalidation": not all(checks.values()),
+    }
+
+
 def audit_opportunities(config_path: Path) -> dict[str, Any]:
     config = yaml.safe_load(config_path.read_text(encoding="utf-8"))
     if not isinstance(config, dict):
@@ -257,11 +280,15 @@ def audit_opportunities(config_path: Path) -> dict[str, Any]:
         validators_list, teachers
     )
     canonical_summary = _canonical_summary(canonical)
+    sft_summary = _canonical_summary(sft)
 
     negative_prefix_by_trajectory: Counter[str] = Counter()
+    non_integer_label_by_trajectory: Counter[str] = Counter()
     for record in prm:
         if type(record.get("label")) is int and record["label"] == 0:
             negative_prefix_by_trajectory[str(record.get("trajectory_id"))] += 1
+        if type(record.get("label")) is not int:
+            non_integer_label_by_trajectory[str(record.get("trajectory_id"))] += 1
     negative_prefix_multiplicity = _counts(negative_prefix_by_trajectory.values())
 
     expected = config["source_identity"]
@@ -293,14 +320,12 @@ def audit_opportunities(config_path: Path) -> dict[str, Any]:
         "sft_trajectory_ids_unique": len(set(sft_ids)) == len(sft_ids),
         "sft_is_canonical_subset": set(sft_ids).issubset(canonical_ids),
         "prm_trajectory_step_keys_unique": len(set(prm_keys)) == len(prm_keys),
-        "prm_labels_are_strict_binary_integers": all(
-            type(record.get("label")) is int and record["label"] in {0, 1}
-            for record in prm
-        ),
     }
     hashes_after = _source_hashes(run_dir)
     source_unchanged = hashes_before == hashes_after
 
+    source_integrity_passed = all(count_checks.values()) and source_unchanged
+    quality = _quality_status(canonical_summary, sft_summary, prm)
     report = {
         "schema_version": "medtrace.prm-negative-opportunity-audit.v1",
         "generated_at_utc": datetime.now(timezone.utc).isoformat(),
@@ -333,6 +358,7 @@ def audit_opportunities(config_path: Path) -> dict[str, Any]:
         },
         "recovery_canary": _recovery_summary(run_dir, teachers),
         "canonical": canonical_summary,
+        "sft": sft_summary,
         "prm": {
             "strict_labels": _strict_labels(record.get("label") for record in prm),
             "negative_prefix_records": sum(negative_prefix_by_trajectory.values()),
@@ -341,16 +367,30 @@ def audit_opportunities(config_path: Path) -> dict[str, Any]:
             ),
             "negative_prefix_records_per_negative_trajectory":
                 negative_prefix_multiplicity,
+            "non_integer_label_records": sum(non_integer_label_by_trajectory.values()),
+            "distinct_trajectories_with_non_integer_label": len(
+                non_integer_label_by_trajectory
+            ),
+            "non_integer_label_records_per_trajectory": _counts(
+                non_integer_label_by_trajectory.values()
+            ),
             "readiness_basis": "distinct strict first-error trajectories, not row balance",
         },
         "integrity": {
             "count_checks": count_checks,
             "source_artifacts_unchanged": source_unchanged,
-            "passed": all(count_checks.values()) and source_unchanged,
+            "failed_checks": sorted(
+                name for name, passed in count_checks.items() if not passed
+            ),
+            "passed": source_integrity_passed,
         },
+        "quality": quality,
         "decision": {
             "full_scale_authorized": False,
             "model_or_api_calls_authorized": False,
+            "strict_training_artifacts_ready": quality[
+                "strict_training_artifacts_passed"
+            ],
             "next_gate": "Review this aggregate audit before freezing a paid canary.",
         },
     }
@@ -363,7 +403,9 @@ def render_markdown(report: dict[str, Any]) -> str:
     validator = report["validator"]
     recovery = report["recovery_canary"]
     canonical = report["canonical"]
+    sft = report["sft"]
     prm = report["prm"]
+    quality = report["quality"]
     by_benchmark = json.dumps(opportunities["by_benchmark"], sort_keys=True)
     negative_multiplicity = json.dumps(
         prm["negative_prefix_records_per_negative_trajectory"], sort_keys=True
@@ -402,6 +444,8 @@ def render_markdown(report: dict[str, Any]) -> str:
             f"{json.dumps(recovery['dispositions'], sort_keys=True)}`",
             f"- Canonical dispositions: `"
             f"{json.dumps(canonical['dispositions'], sort_keys=True)}`",
+            f"- SFT dispositions: `"
+            f"{json.dumps(sft['dispositions'], sort_keys=True)}`",
             "",
             "## Existing PRM evidence",
             "",
@@ -410,10 +454,17 @@ def render_markdown(report: dict[str, Any]) -> str:
             f"- Distinct trajectories with a negative prefix: "
             f"{prm['distinct_trajectories_with_negative_prefix']}",
             f"- Negative multiplicity: `{negative_multiplicity}`",
+            f"- Non-integer label records / trajectories: "
+            f"{prm['non_integer_label_records']} / "
+            f"{prm['distinct_trajectories_with_non_integer_label']}",
             "",
             "## Gate",
             "",
             f"- Integrity passed: {str(report['integrity']['passed']).lower()}",
+            f"- Strict training artifacts passed: "
+            f"{str(quality['strict_training_artifacts_passed']).lower()}",
+            f"- Failed quality checks: `"
+            f"{json.dumps(quality['failed_checks'], sort_keys=True)}`",
             "- Model/API calls authorized: false",
             "- Full-scale generation authorized: false",
             "",
@@ -439,7 +490,10 @@ def main() -> None:
     _write_text(markdown_path, render_markdown(report))
     print(render_markdown(report), end="")
     if not report["integrity"]["passed"]:
-        raise RuntimeError("PRM negative opportunity audit integrity checks failed")
+        failed = ", ".join(report["integrity"]["failed_checks"]) or "source_hashes"
+        raise RuntimeError(
+            f"PRM negative opportunity source integrity failed: {failed}"
+        )
 
 
 if __name__ == "__main__":
