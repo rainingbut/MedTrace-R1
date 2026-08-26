@@ -1,0 +1,87 @@
+schema_version: medtrace.cot.prm-negative-canary.v1
+execution_enabled: false
+
+source_run_dir: results/cot/pilot_v1_real
+strict_source_subdir: prm_negative_enrichment_v1/strict_source_v1
+output_subdir: prm_negative_enrichment_v1/canary_v1
+source_identity:
+  config_sha256: 168243919b2912ba76b1e70d4228d011cd18b2a2d3583ed9f026b712677ca36f
+  questions_sha256: eb7f4c2ba71d4651929af89558bfa64c295dcdab902e218483f931c040df9f76
+  generation_git_commit: 461a95cb28837f8072b6fc3d927f57fd8fb80f87
+  questions: 40
+  teacher_events: 160
+  canonical_trajectories: 109
+  prm_records: 727
+strict_source_expected:
+  canonical_trajectories: 108
+  sft_records: 107
+  prm_records: 721
+
+selection:
+  seed: 20260826
+  total: 24
+  by_origin:
+    existing_teacher_answer_mismatch: 8
+    local_student: 8
+    controlled_single_error: 8
+  each_origin_by_benchmark:
+    medqa: 4
+    medmcqa: 4
+  prefer_distinct_questions: true
+
+local_model:
+  provider: local_vllm
+  model_id: Qwen/Qwen2.5-7B-Instruct
+  model_revision: a09a35458c702b33eeacc393d103063234e8bc28
+  base_url: http://127.0.0.1:8000/v1
+  api_key_env: MEDTRACE_API_KEY
+  runtime_manifest: results/runtime/cot_screener_runtime_manifest.json
+  expected_vllm_version: 0.24.0
+  temperature: 0.7
+  top_p: 0.95
+  max_output_tokens: 1536
+  max_retries: 1
+  timeout_seconds: 180
+  max_attempted_questions_per_origin_and_benchmark: 12
+
+student:
+  prompt_version: prm_student_v1
+  expose_gold_answer: false
+
+controlled_mutator:
+  prompt_version: prm_controlled_mutator_v1
+  target_position_cycle: [early, middle, late, middle]
+  preserve_non_target_steps_exactly: true
+  preserve_answer_exactly: true
+
+validator:
+  provider: openrouter
+  model_id: deepseek/deepseek-v4-pro
+  provider_version: OpenRouter-DeepSeek-V4-Pro
+  base_url: https://openrouter.ai/api/v1
+  api_key_env: OPENROUTER_API_KEY
+  prompt_version: validator_v2
+  reasoning_effort: high
+  require_zero_data_retention: true
+  allow_provider_fallbacks: true
+  response_format: json_schema_strict
+  temperature: 0
+  max_output_tokens: 8192
+  max_retries: 0
+  timeout_seconds: 600
+
+budget:
+  api_hard_cap_cny_equivalent: 20
+  stop_before_limit_fraction: 0.90
+  local_gpu_hours_cap: 1
+  usd_to_cny: 7.20
+  validator_usd_per_million_input_tokens: 2.10
+  validator_usd_per_million_output_tokens: 4.40
+
+quality_gates:
+  transport_and_contract_success_rate: 1.0
+  minimum_distinct_strict_negative_trajectories: 8
+  require_both_benchmarks: true
+  minimum_negative_origins: 2
+  human_trajectory_label_accuracy: 0.90
+  human_exact_first_error_accuracy: 0.80

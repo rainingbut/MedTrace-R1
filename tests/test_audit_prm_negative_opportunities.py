@@ -177,7 +177,8 @@ class PrmNegativeOpportunityAuditTests(unittest.TestCase):
                     "prefixes_from_first_error": 0,
                 },
                 "future_canary": {
-                    "requires_separate_user_approval": True,
+                    "requires_separate_user_approval": False,
+                    "approval_status": "approved_2026-08-26",
                     "target_total": 24,
                     "target_by_benchmark": {"medqa": 12, "medmcqa": 12},
                     "preferred_origin_targets": {

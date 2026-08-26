@@ -88,3 +88,12 @@ derived PRM labels are JSON booleans rather than integer ones. Those records are
 not strict training artifacts. The original files remain immutable; any
 normalization or validator v2 revalidation requires an isolated, auditable
 derivative and a later decision.
+
+## PRM negative canary approval (2026-08-26)
+
+The user approved execution without a second approval gate for exactly 24
+candidates: eight existing answer-mismatch, eight local gold-blind student, and
+eight local controlled-single-error candidates. Each origin contains four
+MedQA and four MedMCQA cases. The OpenRouter hard cap is CNY 20 equivalent with
+a CNY 18 stop line; local GPU time is capped at one hour. This approval does not
+authorize merging canary labels into training data or larger-scale generation.

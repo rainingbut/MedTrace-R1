@@ -78,8 +78,10 @@ def validate_prm_negative_policy(config: dict[str, Any]) -> None:
         raise ValueError("prefixes from the first error must remain negative")
 
     canary = config.get("future_canary") or {}
-    if canary.get("requires_separate_user_approval") is not True:
-        raise ValueError("future model calls require separate approval")
+    if canary.get("requires_separate_user_approval") is not False:
+        raise ValueError("approved PRM canary must not request a second approval")
+    if canary.get("approval_status") != "approved_2026-08-26":
+        raise ValueError("PRM canary approval status changed")
     if int(canary.get("target_total", 0)) != 24:
         raise ValueError("future canary target must remain 24")
     if canary.get("target_by_benchmark") != {"medqa": 12, "medmcqa": 12}:

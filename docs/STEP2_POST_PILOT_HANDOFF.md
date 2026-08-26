@@ -1,12 +1,12 @@
 # MEDTRACE-R1 新会话交接：Step 2 CoT 试跑后质量审计
 
-更新时间：2026-08-13（Asia/Shanghai）
+更新时间：2026-08-26（Asia/Shanghai）
 
-## 0. 2026-08-17 最新状态（优先于下文旧状态）
+## 0. 2026-08-26 最新状态（优先于下文旧状态）
 
 下文保留了 40 题审计前后的历史操作记录。本节是当前工作的最新入口：
 
-- 当前开发基线为 `d7da6f5f4f37a75e2d7275ff14995e84c36dfb9d`；
+- 当前已发布开发基线为 `8620ee3`；本轮 canary 实现完成后以运行手册记录的提交为准；
 - validator v2 recovery 已修复原25条失败响应的空内容/JSON契约问题；
 - 6条 recovery canary 全部完成且结构合法，但全部判为正；
 - 原 pilot PRM 严格标签约为723正、4负，尚未达到 PRM 训练就绪状态；
@@ -17,7 +17,12 @@
 - screener reject 自然候选为0，因此11条现存候选不足以单独解决负样本问题；
 - 另发现1条旧契约不合法 canonical，对应6条布尔 `true` PRM 标签；
 - 修订版将源完整性与训练质量分离，不再因已报告的标签质量问题令审计命令失败；
-- 第一阶段实现后的本地完整单元测试为82项全部通过。
+- 当前本地完整单元测试为90项全部通过。
+- 用户已于2026-08-26批准固定24条 PRM 负样本 canary，且不需要二次批准；
+- canary 固定为现有自然/本地学生/单点受控错误各8条，每路 MedQA/MedMCQA 各4条；
+- OpenRouter 硬上限 CNY 20、停止线 CNY 18，本地 GPU 上限1小时；
+- 准确命令见 `docs/STEP2_PRM_NEGATIVE_CANARY_RUNBOOK.md`；
+- 该批准不包含将 canary 合并进训练数据或扩大规模。
 
 当前设计与命令见：
 
@@ -28,9 +33,9 @@ data_pipeline/audit_prm_negative_opportunities.py
 schemas/prm_negative_candidate_v1.schema.json
 ```
 
-原始 `results/cot/pilot_v1_real/` 七类核心产物必须保持不变。离线审计只能产生新的
-聚合报告，不得输出题目 ID、题干或轨迹文本。完成本阶段后，必须根据自然候选池的
-真实数量重新提交24条 canary 的确切构成和费用预算，等待用户再次确认。
+原始 `results/cot/pilot_v1_real/` 七类核心产物必须保持不变。公开聚合审计不得输出
+题目 ID、题干或轨迹文本。24条 canary 的构成和预算已经冻结并获批，可按
+`docs/STEP2_PRM_NEGATIVE_CANARY_RUNBOOK.md` 直接执行，不需要二次确认。
 
 ## 1. 新会话必须先做什么
 

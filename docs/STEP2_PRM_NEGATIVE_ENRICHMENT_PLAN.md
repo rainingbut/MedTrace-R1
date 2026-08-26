@@ -87,7 +87,7 @@ results/cot/pilot_v1_real/prm_negative_enrichment_v1/prm_negative_opportunity_au
 
 该命令不读取 API Key、不访问模型端点、不需要 GPU。
 
-## 5. 后续关口（尚未授权）
+## 5. 已批准 canary 与后续关口
 
 ### 5.1 第一轮 AutoDL 只读审计结果
 
@@ -113,17 +113,21 @@ results/cot/pilot_v1_real/prm_negative_enrichment_v1/prm_negative_opportunity_au
 返回非零。修订版已拆分两个门：只有源文件缺失、计数不一致、键重复或审计期间哈希
 变化才抛出异常；严格契约/标签问题会阻止训练就绪，但不会令只读审计命令失败。
 
-### 5.2 未来 canary
+### 5.2 已批准 canary
 
-收到第一阶段聚合报告后，才能冻结确切 canary 构成和预算。当前建议目标为24条：
+用户已于2026-08-26批准24条 canary，并明确不需要二次批准。冻结配置、预算和
+运行命令见 `docs/STEP2_PRM_NEGATIVE_CANARY_RUNBOOK.md`。该授权只覆盖24条
+canary，不覆盖合并训练数据或扩大生成。
+
+第一阶段聚合报告完成后，已冻结如下24条 canary 构成：
 
 - 优先 8 条现有自然候选；
 - 8 条本地 Qwen2.5-7B gold-blind 学生采样；
 - 8 条单点受控难负例；
 - MedQA、MedMCQA 各12条。
 
-以上是目标配额而非已授权运行。自然候选不足时必须先根据审计结果调整配额，不能
-静默替换来源。
+冻结配额为每路8条、每个来源在 MedQA/MedMCQA 各4条。现存11条自然候选中只
+选择4+4条，其余3条 MedQA 候选保留不用。
 
 Canary 最低质量门槛：
 
@@ -133,4 +137,5 @@ Canary 最低质量门槛：
 - 人工首错位置精确准确率至少80%；
 - 不得只覆盖单一 benchmark、来源或错误位置。
 
-Canary、剩余 recovery、中等规模试跑和正式 5,000--15,000 题生成均需要分别确认。
+本24条 canary 已获批准；剩余 recovery、中等规模试跑和正式 5,000--15,000 题
+生成仍需要分别确认。
