@@ -1,3 +1,5 @@
+from contextlib import redirect_stdout
+import io
 import json
 from pathlib import Path
 import tempfile
@@ -9,6 +11,11 @@ import yaml
 from data_pipeline.audit_prm_negative_validator_recovery import audit_recovery
 from data_pipeline.audit_prm_negative_human_review import score_review
 from data_pipeline.audit_prm_negative_human_adjudication import score_adjudication
+from data_pipeline.audit_prm_negative_materialization import audit_materialization
+from data_pipeline.materialize_prm_negative_candidates import (
+    build_materialization,
+    main as materialize_main,
+)
 from data_pipeline.prm_negative_human_adjudication_config import (
     validate_prm_negative_human_adjudication_config,
 )
@@ -28,6 +35,12 @@ from data_pipeline.prm_negative_human_review_state import (
     load_review_context,
     validate_annotation_lock,
     validate_annotations,
+)
+from data_pipeline.prm_negative_materialization_config import (
+    validate_prm_negative_materialization_config,
+)
+from data_pipeline.prm_negative_materialization_state import (
+    validate_prm_record_set,
 )
 from data_pipeline.prm_negative_recovery_config import (
     validate_prm_negative_recovery_config,
@@ -52,6 +65,10 @@ HUMAN_CONFIG_PATH = ROOT / "configs/cot/prm_negative_human_review_v2.yaml"
 ADJUDICATION_CONFIG_PATH = (
     ROOT / "configs/cot/prm_negative_human_adjudication_v1.yaml"
 )
+MATERIALIZATION_CONFIG_PATH = (
+    ROOT / "configs/cot/prm_negative_materialization_v1.yaml"
+)
+CANARY_CONFIG_PATH = ROOT / "configs/cot/prm_negative_canary_v1.yaml"
 
 
 def validator_result(label: int, first: int | None = None) -> dict:
@@ -104,7 +121,7 @@ def create_fixture(root: Path) -> tuple[dict, dict]:
     )
     source_cost = 0.0
     for index, origin in enumerate(origins):
-        candidate_id = f"candidate-{index:02d}"
+        candidate_id = f"sha256:{index:064x}"
         source_hash = f"{index:064x}"
         benchmark = "medqa" if index % 2 == 0 else "medmcqa"
         candidates.append(
@@ -113,7 +130,9 @@ def create_fixture(root: Path) -> tuple[dict, dict]:
                 "origin": origin,
                 "source": {
                     "dataset": benchmark,
+                    "source_id": f"private-{index:02d}",
                     "content_sha256": source_hash,
+                    "split": "train",
                 },
                 "trajectory": {
                     "steps": ["private one", "private two", "private three"],
@@ -340,6 +359,86 @@ def create_adjudication(root: Path) -> tuple[dict, dict, Path, dict]:
     ]
     lock_path.write_text(json.dumps(lock), encoding="utf-8")
     return config, context, path, lock
+
+
+def create_materialization_source(root: Path) -> dict:
+    create_adjudication(root)
+    adjudication_config_target = (
+        root / "configs/cot/prm_negative_human_adjudication_v1.yaml"
+    )
+    adjudication_config_target.write_text(
+        ADJUDICATION_CONFIG_PATH.read_text(encoding="utf-8"), encoding="utf-8"
+    )
+    canary_config_target = root / "configs/cot/prm_negative_canary_v1.yaml"
+    canary_config_target.write_text(
+        CANARY_CONFIG_PATH.read_text(encoding="utf-8"), encoding="utf-8"
+    )
+    materialization_config_target = (
+        root / "configs/cot/prm_negative_materialization_v1.yaml"
+    )
+    materialization_config_target.write_text(
+        MATERIALIZATION_CONFIG_PATH.read_text(encoding="utf-8"),
+        encoding="utf-8",
+    )
+    adjudication_config = yaml.safe_load(
+        adjudication_config_target.read_text(encoding="utf-8")
+    )
+    adjudication_context = load_adjudication_context(
+        adjudication_config, root
+    )
+    report, candidates = score_adjudication(
+        adjudication_config_target, repo_root=root
+    )
+    files = adjudication_config["private_files"]
+    canary_dir = adjudication_context["canary_dir"]
+    (canary_dir / files["aggregate_audit_json"]).write_text(
+        json.dumps(report), encoding="utf-8"
+    )
+    write_jsonl(canary_dir / files["approved_negative_candidates"], candidates)
+
+    strict_dir = (
+        root / "results/cot/pilot_v1_real/"
+        "prm_negative_enrichment_v1/strict_source_v1"
+    )
+    strict_records = []
+    for index in range(721):
+        strict_records.append(
+            {
+                "trajectory_id": f"strict-{index:03d}",
+                "step_index": 0,
+                "prefix": [f"private strict step {index}"],
+                "label": 0 if index < 4 else 1,
+                "error_codes": ["medical_fact_error"] if index < 4 else [],
+                "source": {
+                    "dataset": "medqa" if index % 2 == 0 else "medmcqa",
+                    "source_id": f"strict-private-{index}",
+                    "content_sha256": f"{1000 + index:064x}",
+                    "split": "train",
+                },
+            }
+        )
+    write_jsonl(strict_dir / "process_train.jsonl", strict_records)
+    write_jsonl(
+        strict_dir / "sft_verified.jsonl",
+        [{"private": index} for index in range(107)],
+    )
+    canary_config = yaml.safe_load(
+        canary_config_target.read_text(encoding="utf-8")
+    )
+    (strict_dir / "manifest.json").write_text(
+        json.dumps(
+            {
+                "status": "complete",
+                "counts": canary_config["strict_source_expected"],
+                "source_artifact_sha256": {"pilot": "hash"},
+                "config_sha256": sha256_file(canary_config_target),
+            }
+        ),
+        encoding="utf-8",
+    )
+    return yaml.safe_load(
+        materialization_config_target.read_text(encoding="utf-8")
+    )
 
 
 class PrmNegativeValidatorRecoveryTests(unittest.TestCase):
@@ -617,6 +716,90 @@ class PrmNegativeValidatorRecoveryTests(unittest.TestCase):
                 )
                 with self.assertRaisesRegex(RuntimeError, "lock"):
                     validate_adjudication_lock(lock, path, context, metadata)
+
+    def test_materialization_config_is_frozen_and_training_stays_unauthorized(self):
+        config = yaml.safe_load(
+            MATERIALIZATION_CONFIG_PATH.read_text(encoding="utf-8")
+        )
+        validate_prm_negative_materialization_config(config)
+        runtime = dict(config)
+        runtime["execution_enabled"] = True
+        validate_prm_negative_materialization_config(runtime, execute=True)
+        self.assertTrue(
+            config["authorization"]["derivative_prm_records_authorized"]
+        )
+        self.assertFalse(config["authorization"]["training_use_authorized"])
+
+    def test_prm_record_set_rejects_boolean_labels(self):
+        records = [
+            {
+                "trajectory_id": "private",
+                "step_index": 0,
+                "prefix": ["private step"],
+                "label": True,
+                "error_codes": [],
+                "source": {
+                    "dataset": "medqa",
+                    "source_id": "private",
+                    "content_sha256": "a" * 64,
+                    "split": "train",
+                },
+            }
+        ]
+        with self.assertRaisesRegex(ValueError, "strict binary integer"):
+            validate_prm_record_set(records)
+
+    def test_materialization_builds_11_trajectories_and_passes_balance_audit(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            with patch(
+                "data_pipeline.prm_negative_recovery_state._source_hashes",
+                return_value={"pilot": "hash"},
+            ), patch(
+                "data_pipeline.prm_negative_materialization_state._source_hashes",
+                return_value={"pilot": "hash"},
+            ), patch(
+                "data_pipeline.materialize_prm_negative_candidates.REPO_ROOT",
+                root,
+            ), patch(
+                "sys.argv",
+                [
+                    "materialize_prm_negative_candidates",
+                    "--config",
+                    "configs/cot/prm_negative_materialization_v1.yaml",
+                    "--materialize-approved-11",
+                ],
+            ):
+                create_fixture(root)
+                create_materialization_source(root)
+                summary, candidate_records, enriched = build_materialization(
+                    MATERIALIZATION_CONFIG_PATH, repo_root=root
+                )
+                self.assertEqual(
+                    summary["candidate_prefixes"]["trajectories"], 11
+                )
+                self.assertEqual(summary["candidate_prefixes"]["records"], 33)
+                self.assertEqual(summary["candidate_prefixes"]["labels"], {
+                    "0": 22,
+                    "1": 11,
+                })
+                self.assertEqual(len(candidate_records), 33)
+                self.assertEqual(len(enriched), 754)
+                with redirect_stdout(io.StringIO()):
+                    materialize_main()
+                report = audit_materialization(
+                    MATERIALIZATION_CONFIG_PATH, repo_root=root
+                )
+            serialized = json.dumps(report)
+            self.assertTrue(report["quality_gate"]["passed"])
+            self.assertEqual(report["negative_prefix_increase"], {
+                "before": 4,
+                "added": 22,
+                "after": 26,
+            })
+            self.assertFalse(report["decision"]["training_use_authorized"])
+            self.assertFalse(report["decision"]["sft_changed"])
+            self.assertNotIn("private strict step", serialized)
 
 
 def _load_attempts(path: Path) -> list[dict]:

@@ -48,6 +48,8 @@ configs/cot/prm_negative_human_review_v2.yaml
 docs/STEP2_PRM_NEGATIVE_HUMAN_REVIEW_RUNBOOK.md
 configs/cot/prm_negative_human_adjudication_v1.yaml
 docs/STEP2_PRM_NEGATIVE_HUMAN_ADJUDICATION_RUNBOOK.md
+configs/cot/prm_negative_materialization_v1.yaml
+docs/STEP2_PRM_NEGATIVE_MATERIALIZATION_RUNBOOK.md
 ```
 
 原始 `results/cot/pilot_v1_real/` 七类核心产物必须保持不变。公开聚合审计不得输出

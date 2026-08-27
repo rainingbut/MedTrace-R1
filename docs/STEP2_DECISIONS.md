@@ -135,3 +135,20 @@ is protected by a separate hash lock. A passing adjudicated gate may emit only
 a conservative candidate metadata list. It does not authorize model/API calls,
 training-record creation, merge, or scale expansion. Commands are frozen in
 `docs/STEP2_PRM_NEGATIVE_HUMAN_ADJUDICATION_RUNBOOK.md`.
+
+## Offline PRM negative materialization approval (2026-08-27)
+
+The post-lock adjudication passed at 11/12 exact-first-error agreement and
+authorized 11 conservative candidate metadata records. The user approved an
+offline materialization phase that converts exactly those candidates into
+prefix-level PRM records, writes them only in an isolated derivative, and
+reports the resulting label balance.
+
+The original 721-record strict PRM view and 107-record strict SFT view remain
+immutable. Materialized labels must be strict integers, remain positive before
+the agreed first error, and remain negative from that error onward. Duplicate
+records, duplicate trajectories, strict-source overlap, or changed upstream
+locks fail closed. This phase authorizes derivative PRM record creation but not
+training use, SFT changes, model/API calls, GPU inference, or full-scale
+generation. Commands are frozen in
+`docs/STEP2_PRM_NEGATIVE_MATERIALIZATION_RUNBOOK.md`.

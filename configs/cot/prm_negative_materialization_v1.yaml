@@ -1,0 +1,53 @@
+schema_version: medtrace.cot.prm-negative-materialization.v1
+execution_enabled: false
+approval_status: approved_2026-08-27
+
+source_adjudication_config: configs/cot/prm_negative_human_adjudication_v1.yaml
+source_canary_config: configs/cot/prm_negative_canary_v1.yaml
+source_run_dir: results/cot/pilot_v1_real
+strict_source_subdir: prm_negative_enrichment_v1/strict_source_v1
+source_canary_subdir: prm_negative_enrichment_v1/canary_v1
+output_subdir: prm_negative_enrichment_v1/prm_negative_materialization_v1
+
+source_expectations:
+  approved_negative_trajectories: 11
+  strict_prm_records: 721
+  strict_positive_prefix_records: 717
+  strict_negative_prefix_records: 4
+
+output_files:
+  candidate_prefix_records: process_train_negative_candidates_v1.jsonl
+  enriched_process_train: process_train_negative_enriched_canary_v1.jsonl
+  manifest: manifest.json
+  aggregate_audit_json: audit.json
+  aggregate_audit_markdown: audit.md
+
+materialization_contract:
+  record_keys: [trajectory_id, step_index, prefix, label, error_codes, source]
+  label_semantics: prefix_correctness
+  prefixes_before_first_error: 1
+  prefixes_from_first_error: 0
+  strict_integer_labels: true
+  require_contiguous_step_indices: true
+  require_distinct_candidate_trajectories: true
+  reject_overlap_with_strict_source: true
+  preserve_strict_source: true
+  preserve_sft_source: true
+
+quality_gates:
+  exact_approved_trajectories: 11
+  minimum_negative_prefix_records: 11
+  minimum_negative_trajectories: 11
+  require_both_benchmarks: true
+  minimum_negative_origins: 2
+  require_zero_duplicate_records: true
+  require_source_artifacts_unchanged: true
+
+authorization:
+  offline_only: true
+  model_or_api_calls_authorized: false
+  gpu_inference_authorized: false
+  derivative_prm_records_authorized: true
+  training_use_authorized: false
+  sft_changes_authorized: false
+  full_scale_generation_authorized: false
