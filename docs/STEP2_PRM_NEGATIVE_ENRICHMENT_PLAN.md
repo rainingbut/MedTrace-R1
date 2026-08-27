@@ -137,5 +137,18 @@ Canary 最低质量门槛：
 - 人工首错位置精确准确率至少80%；
 - 不得只覆盖单一 benchmark、来源或错误位置。
 
-本24条 canary 已获批准；剩余 recovery、中等规模试跑和正式 5,000--15,000 题
-生成仍需要分别确认。
+本24条 canary 和下述3条 HTTP 429 recovery 已获批准；其他 recovery、中等规模
+试跑和正式 5,000--15,000 题生成仍需要分别确认。
+
+### 5.3 三条 HTTP 429 定点 recovery
+
+24条 canary 的机器门仅因3条 OpenRouter HTTP 429 无内容响应失败；其余21条严格
+契约有效，并已得到11条严格过程负例。用户已于2026-08-27批准只恢复这3条事件：
+
+- 使用相同 `deepseek/deepseek-v4-pro` validator v2；
+- 每条最多两次请求，首次/候选间/429重试分别等待60/45/90秒；
+- 新增 CNY 2 硬上限、CNY 1.8 停止线；
+- 独立 append-only 日志，不覆盖原 canary；
+- 不生成新候选、不使用本地 GPU、不合并训练数据、不扩大规模。
+
+准确命令见 `docs/STEP2_PRM_NEGATIVE_VALIDATOR_RECOVERY_RUNBOOK.md`。

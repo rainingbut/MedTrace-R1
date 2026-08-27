@@ -97,3 +97,13 @@ eight local controlled-single-error candidates. Each origin contains four
 MedQA and four MedMCQA cases. The OpenRouter hard cap is CNY 20 equivalent with
 a CNY 18 stop line; local GPU time is capped at one hour. This approval does not
 authorize merging canary labels into training data or larger-scale generation.
+
+## PRM negative validator HTTP 429 recovery approval (2026-08-27)
+
+The 24-case canary produced 21 strict-contract results, 11 strict process
+negatives, and three unavailable responses. All three unavailable responses
+were OpenRouter HTTP 429 failures without content. The user approved recovery
+of exactly those three events with the same validator v2 contract, at most two
+requests per event, 60/45/90-second throttling, a CNY 2 hard cap, and a CNY 1.8
+stop line. Recovery must not overwrite source events, generate candidates, use
+local GPU inference, merge training data, or expand scale.

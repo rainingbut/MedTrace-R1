@@ -1,0 +1,64 @@
+schema_version: medtrace.cot.prm-negative-validator-recovery.v1
+execution_enabled: false
+approval_status: approved_2026-08-27
+
+source_canary_config: configs/cot/prm_negative_canary_v1.yaml
+source_run_dir: results/cot/pilot_v1_real
+source_canary_subdir: prm_negative_enrichment_v1/canary_v1
+output_subdir: prm_negative_enrichment_v1/canary_v1/validator_recovery_v1
+
+source_expectations:
+  candidates: 24
+  validator_events: 24
+  strict_contract_valid: 21
+  unavailable: 3
+  unavailable_event_status: api_or_parse_error
+  unavailable_error_category: http_429
+  unavailable_content_present: false
+
+selection:
+  total: 3
+  only_source_unavailable: true
+  only_http_429: true
+
+validator:
+  provider: openrouter
+  model_id: deepseek/deepseek-v4-pro
+  provider_version: OpenRouter-DeepSeek-V4-Pro
+  base_url: https://openrouter.ai/api/v1
+  api_key_env: OPENROUTER_API_KEY
+  prompt_version: validator_v2
+  reasoning_effort: high
+  require_zero_data_retention: true
+  allow_provider_fallbacks: true
+  response_format: json_schema_strict
+  temperature: 0
+  max_output_tokens: 8192
+  max_retries: 0
+  timeout_seconds: 600
+
+throttle:
+  initial_delay_seconds: 60
+  inter_candidate_delay_seconds: 45
+  http_429_retry_delay_seconds: 90
+  max_total_attempts_per_candidate: 2
+
+budget:
+  api_hard_cap_cny_equivalent: 2
+  stop_before_limit_fraction: 0.90
+  usd_to_cny: 7.20
+  validator_usd_per_million_input_tokens: 2.10
+  validator_usd_per_million_output_tokens: 4.40
+
+quality_gates:
+  canonical_transport_and_contract_success_rate: 1.0
+  minimum_distinct_strict_negative_trajectories: 8
+  require_both_benchmarks: true
+  minimum_negative_origins: 2
+  human_trajectory_label_accuracy: 0.90
+  human_exact_first_error_accuracy: 0.80
+
+authorization:
+  recovery_only: true
+  training_merge_authorized: false
+  full_scale_generation_authorized: false

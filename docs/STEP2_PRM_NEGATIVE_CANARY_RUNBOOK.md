@@ -185,3 +185,10 @@ licensed question/trajectory material and must not be committed or shared.
 
 The canary does not automatically merge any record into SFT or PRM training
 data, even if machine gates pass.
+
+## 8. Recorded result and approved HTTP 429 recovery
+
+The completed canary produced 21 strict-contract results, 11 strict process
+negatives, and 3 unavailable responses. All three unavailable responses were
+OpenRouter HTTP 429 failures with no content. The approved isolated recovery
+commands are in `docs/STEP2_PRM_NEGATIVE_VALIDATOR_RECOVERY_RUNBOOK.md`.
