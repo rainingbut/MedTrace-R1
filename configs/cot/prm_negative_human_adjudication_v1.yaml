@@ -1,0 +1,51 @@
+schema_version: medtrace.cot.prm-negative-human-adjudication.v1
+write_enabled: false
+approval_status: approved_2026-08-27
+
+source_human_review_config: configs/cot/prm_negative_human_review_v2.yaml
+
+private_files:
+  adjudication: human_review_adjudication_v1.jsonl
+  adjudication_lock: human_review_adjudication_v1.lock.json
+  aggregate_audit_json: human_review_adjudication_audit_v1.json
+  aggregate_audit_markdown: human_review_adjudication_audit_v1.md
+  approved_negative_candidates: human_adjudicated_negative_candidates_v1.jsonl
+
+source_gate:
+  total_annotations: 24
+  human_problem_ok: 19
+  raw_trajectory_correct: 19
+  raw_trajectory_total: 19
+  raw_first_error_correct: 9
+  raw_first_error_total: 12
+  raw_conservative_candidates: 9
+  required_failed_checks: [exact_first_error_accuracy_at_least_80_percent]
+  total_disagreements: 3
+
+adjudication_contract:
+  total_cases: 3
+  require_unblinded_attestation: true
+  require_original_review_preserved: true
+  decision_protocol: earliest_unambiguously_incorrect_step
+  decision_source_values: [human, validator]
+  adjudicated_step_must_be_original_or_validator: true
+  require_rationale: true
+
+scoring:
+  minimum_adjudicated_exact_first_error_accuracy: 0.80
+  minimum_conservative_negative_candidates: 8
+  raw_blind_metrics_must_remain_reported: true
+
+candidate_policy:
+  require_human_problem_status_ok: true
+  require_human_trajectory_negative: true
+  require_human_error_type_process: true
+  require_validator_strict_process_negative: true
+  require_adjudicated_exact_first_error_agreement: true
+  write_training_records: false
+
+authorization:
+  offline_only: true
+  model_or_api_calls_authorized: false
+  training_merge_authorized: false
+  full_scale_generation_authorized: false

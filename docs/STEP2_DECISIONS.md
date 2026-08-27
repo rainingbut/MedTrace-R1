@@ -119,3 +119,19 @@ Human negatives explicitly distinguish process errors from answer-only
 inconsistency; only process negatives enter the first-error denominator.
 Only a conservative candidate metadata list may be written after both gates
 pass. No model/API call, training record, merge, or scale expansion is allowed.
+
+## Post-lock first-error adjudication approval (2026-08-27)
+
+The locked blind review achieved 19/19 trajectory-label agreement and 9/12
+exact-first-error agreement, missing the 80% gate by one exact location. The
+user approved an offline, explicitly unblinded adjudication of exactly the
+three disagreements. The original annotations, lock, recovered validator key,
+raw 9/12 score, and failed gate remain immutable and must continue to appear in
+reports.
+
+The adjudication uses `earliest_unambiguously_incorrect_step`, can choose only
+the original human index or validator index, requires a private rationale, and
+is protected by a separate hash lock. A passing adjudicated gate may emit only
+a conservative candidate metadata list. It does not authorize model/API calls,
+training-record creation, merge, or scale expansion. Commands are frozen in
+`docs/STEP2_PRM_NEGATIVE_HUMAN_ADJUDICATION_RUNBOOK.md`.

@@ -8,6 +8,17 @@ import yaml
 
 from data_pipeline.audit_prm_negative_validator_recovery import audit_recovery
 from data_pipeline.audit_prm_negative_human_review import score_review
+from data_pipeline.audit_prm_negative_human_adjudication import score_adjudication
+from data_pipeline.prm_negative_human_adjudication_config import (
+    validate_prm_negative_human_adjudication_config,
+)
+from data_pipeline.prm_negative_human_adjudication_state import (
+    adjudication_template,
+    expected_adjudication_lock,
+    load_adjudication_context,
+    validate_adjudication_lock,
+    validate_adjudications,
+)
 from data_pipeline.prm_negative_human_review_config import (
     validate_prm_negative_human_review_config,
 )
@@ -38,6 +49,9 @@ from data_pipeline.run_prm_negative_validator_recovery import (
 ROOT = Path(__file__).resolve().parents[1]
 CONFIG_PATH = ROOT / "configs/cot/prm_negative_validator_recovery_v1.yaml"
 HUMAN_CONFIG_PATH = ROOT / "configs/cot/prm_negative_human_review_v2.yaml"
+ADJUDICATION_CONFIG_PATH = (
+    ROOT / "configs/cot/prm_negative_human_adjudication_v1.yaml"
+)
 
 
 def validator_result(label: int, first: int | None = None) -> dict:
@@ -246,6 +260,86 @@ def create_human_annotations(root: Path) -> tuple[dict, dict, Path, dict]:
     ]
     lock_path.write_text(json.dumps(lock), encoding="utf-8")
     return human_config, context, annotation_path, lock
+
+
+def create_failed_human_review(root: Path) -> tuple[dict, dict, Path]:
+    human_config, context, annotation_path, _ = create_human_annotations(root)
+    human_config_target = root / "configs/cot/prm_negative_human_review_v2.yaml"
+    human_config_target.parent.mkdir(parents=True, exist_ok=True)
+    human_config_target.write_text(
+        HUMAN_CONFIG_PATH.read_text(encoding="utf-8"), encoding="utf-8"
+    )
+    records = _load_attempts(annotation_path)
+    for record, wrong_first in zip(records[1:4], (0, 2, 0), strict=True):
+        record["human_first_error_step"] = wrong_first
+    for record in records[-5:]:
+        record["human_problem_status"] = "ambiguous"
+        record["human_trajectory_label"] = None
+        record["human_error_type"] = None
+        record["human_first_error_step"] = None
+    write_jsonl(annotation_path, records)
+    metadata, _ = validate_annotations(records, context, require_complete=True)
+    lock = expected_lock(
+        annotation_path,
+        context,
+        metadata,
+        locked_at_utc="2026-08-27T12:02:00+08:00",
+    )
+    lock_path = context["canary_dir"] / human_config["private_files"][
+        "annotation_lock"
+    ]
+    lock_path.write_text(json.dumps(lock), encoding="utf-8")
+    report, _ = score_review(HUMAN_CONFIG_PATH, repo_root=root)
+    raw_audit_path = context["canary_dir"] / human_config["private_files"][
+        "aggregate_audit_json"
+    ]
+    raw_audit_path.write_text(json.dumps(report), encoding="utf-8")
+    recovered_key_path = context["canary_dir"] / human_config["private_files"][
+        "recovered_key"
+    ]
+    recovered_key_path.write_text("private recovered key", encoding="utf-8")
+    return human_config, context, annotation_path
+
+
+def create_adjudication(root: Path) -> tuple[dict, dict, Path, dict]:
+    create_failed_human_review(root)
+    config = yaml.safe_load(ADJUDICATION_CONFIG_PATH.read_text(encoding="utf-8"))
+    context = load_adjudication_context(config, root)
+    records = adjudication_template(context["disagreements"])
+    records[0].update(
+        {
+            "reviewer_role": "post-lock adjudicator",
+            "unblinded_to_validator_outputs": True,
+            "original_blind_review_preserved": True,
+            "adjudication_completed_at_utc": "2026-08-27T12:03:00+08:00",
+        }
+    )
+    for index, record in enumerate(records[1:]):
+        if index < 2:
+            record["adjudicated_first_error_step"] = record[
+                "validator_first_error_step"
+            ]
+            record["decision_source"] = "validator"
+        else:
+            record["adjudicated_first_error_step"] = record[
+                "original_human_first_error_step"
+            ]
+            record["decision_source"] = "human"
+        record["rationale"] = "private adjudication rationale"
+    path = context["canary_dir"] / config["private_files"]["adjudication"]
+    write_jsonl(path, records)
+    metadata, _ = validate_adjudications(records, context, require_complete=True)
+    lock = expected_adjudication_lock(
+        path,
+        context,
+        metadata,
+        locked_at_utc="2026-08-27T12:04:00+08:00",
+    )
+    lock_path = context["canary_dir"] / config["private_files"][
+        "adjudication_lock"
+    ]
+    lock_path.write_text(json.dumps(lock), encoding="utf-8")
+    return config, context, path, lock
 
 
 class PrmNegativeValidatorRecoveryTests(unittest.TestCase):
@@ -461,6 +555,68 @@ class PrmNegativeValidatorRecoveryTests(unittest.TestCase):
                 "trajectory_label_accuracy_at_least_90_percent",
                 report["quality_gate"]["failed_checks"],
             )
+
+    def test_adjudication_config_is_frozen_and_offline_only(self):
+        config = yaml.safe_load(
+            ADJUDICATION_CONFIG_PATH.read_text(encoding="utf-8")
+        )
+        validate_prm_negative_human_adjudication_config(config)
+        runtime = dict(config)
+        runtime["write_enabled"] = True
+        validate_prm_negative_human_adjudication_config(runtime, write=True)
+        self.assertFalse(config["authorization"]["training_merge_authorized"])
+        self.assertFalse(
+            config["authorization"]["model_or_api_calls_authorized"]
+        )
+
+    def test_locked_adjudication_preserves_raw_score_and_passes_at_11_of_12(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            with patch(
+                "data_pipeline.prm_negative_recovery_state._source_hashes",
+                return_value={"pilot": "hash"},
+            ):
+                create_fixture(root)
+                create_adjudication(root)
+                report, candidates = score_adjudication(
+                    ADJUDICATION_CONFIG_PATH, repo_root=root
+                )
+            serialized = json.dumps(report)
+            self.assertTrue(report["quality_gate"]["passed"])
+            self.assertEqual(
+                report["original_blind_review"]["exact_first_error_accuracy"],
+                0.75,
+            )
+            self.assertEqual(
+                report["adjudication"]["exact_first_error_accuracy"], 11 / 12
+            )
+            self.assertEqual(len(candidates), 11)
+            self.assertNotIn("private question", serialized)
+            self.assertTrue(
+                all("trajectory" not in candidate for candidate in candidates)
+            )
+            self.assertFalse(report["decision"]["training_merge_authorized"])
+
+    def test_adjudication_lock_detects_changed_raw_audit(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            with patch(
+                "data_pipeline.prm_negative_recovery_state._source_hashes",
+                return_value={"pilot": "hash"},
+            ):
+                create_fixture(root)
+                config, context, path, lock = create_adjudication(root)
+                records = _load_attempts(path)
+                metadata, _ = validate_adjudications(
+                    records, context, require_complete=True
+                )
+                validate_adjudication_lock(lock, path, context, metadata)
+                context["raw_audit_path"].write_text(
+                    context["raw_audit_path"].read_text(encoding="utf-8") + "\n",
+                    encoding="utf-8",
+                )
+                with self.assertRaisesRegex(RuntimeError, "lock"):
+                    validate_adjudication_lock(lock, path, context, metadata)
 
 
 def _load_attempts(path: Path) -> list[dict]:
