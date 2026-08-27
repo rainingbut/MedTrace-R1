@@ -39,7 +39,7 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--human-review-config",
-        default="configs/cot/prm_negative_human_review_v1.yaml",
+        default="configs/cot/prm_negative_human_review_v2.yaml",
     )
     return parser.parse_args()
 

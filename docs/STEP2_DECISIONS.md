@@ -115,5 +115,7 @@ strict contracts and 12 strict process negatives. The user approved an offline
 structured blind-review phase: a private 24-case annotation template, strict
 conditional field contracts, an immutable annotation/source/recovery hash lock,
 and aggregate scoring at 90% trajectory-label and 80% exact-first-error gates.
+Human negatives explicitly distinguish process errors from answer-only
+inconsistency; only process negatives enter the first-error denominator.
 Only a conservative candidate metadata list may be written after both gates
 pass. No model/API call, training record, merge, or scale expansion is allowed.

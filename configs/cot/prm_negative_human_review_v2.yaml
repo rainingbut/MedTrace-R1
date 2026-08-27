@@ -1,4 +1,4 @@
-schema_version: medtrace.cot.prm-negative-human-review.v1
+schema_version: medtrace.cot.prm-negative-human-review.v2
 write_enabled: false
 approval_status: approved_2026-08-27
 
@@ -9,34 +9,39 @@ source_recovery_subdir: prm_negative_enrichment_v1/canary_v1/validator_recovery_
 
 private_files:
   blind_review: human_review_blind.md
-  annotations: human_review_annotations_v1.jsonl
-  annotation_lock: human_review_annotations_v1.lock.json
+  annotations: human_review_annotations_v2.jsonl
+  annotation_lock: human_review_annotations_v2.lock.json
   recovered_key: human_review_key_recovered.md
-  approved_negative_candidates: human_approved_negative_candidates_v1.jsonl
-  aggregate_audit_json: human_review_quality_audit_v1.json
-  aggregate_audit_markdown: human_review_quality_audit_v1.md
+  approved_negative_candidates: human_approved_negative_candidates_v2.jsonl
+  aggregate_audit_json: human_review_quality_audit_v2.json
+  aggregate_audit_markdown: human_review_quality_audit_v2.md
 
 annotation_contract:
   total_cases: 24
   problem_status_values: [ok, ambiguous, bad_gold]
   trajectory_label_values: [0, 1]
+  negative_error_type_values: [process, answer_only]
   require_blind_attestation: true
   require_reviewer_role: true
   require_completed_at_utc: true
   non_ok_label_must_be_null: true
+  non_ok_error_type_must_be_null: true
   non_ok_first_error_must_be_null: true
+  positive_error_type_must_be_null: true
   positive_first_error_must_be_null: true
-  negative_first_error_must_be_in_range: true
+  process_negative_first_error_must_be_in_range: true
+  answer_only_negative_first_error_must_be_null: true
 
 scoring:
   trajectory_accuracy_denominator: human_problem_status_ok
-  first_error_accuracy_denominator: human_problem_status_ok_and_human_negative
+  first_error_accuracy_denominator: human_problem_status_ok_and_process_negative
   minimum_trajectory_label_accuracy: 0.90
   minimum_exact_first_error_accuracy: 0.80
 
 candidate_policy:
   require_human_problem_status_ok: true
   require_human_trajectory_negative: true
+  require_human_error_type_process: true
   require_validator_strict_process_negative: true
   require_exact_first_error_agreement: true
   write_training_records: false

@@ -17,7 +17,7 @@
 - screener reject 自然候选为0，因此11条现存候选不足以单独解决负样本问题；
 - 另发现1条旧契约不合法 canonical，对应6条布尔 `true` PRM 标签；
 - 修订版将源完整性与训练质量分离，不再因已报告的标签质量问题令审计命令失败；
-- 当前本地完整单元测试为99项全部通过。
+- 当前本地完整单元测试为100项全部通过。
 - 用户已于2026-08-26批准固定24条 PRM 负样本 canary，且不需要二次批准；
 - canary 固定为现有自然/本地学生/单点受控错误各8条，每路 MedQA/MedMCQA 各4条；
 - OpenRouter 硬上限 CNY 20、停止线 CNY 18，本地 GPU 上限1小时；
@@ -44,7 +44,7 @@ data_pipeline/audit_prm_negative_opportunities.py
 schemas/prm_negative_candidate_v1.schema.json
 configs/cot/prm_negative_validator_recovery_v1.yaml
 docs/STEP2_PRM_NEGATIVE_VALIDATOR_RECOVERY_RUNBOOK.md
-configs/cot/prm_negative_human_review_v1.yaml
+configs/cot/prm_negative_human_review_v2.yaml
 docs/STEP2_PRM_NEGATIVE_HUMAN_REVIEW_RUNBOOK.md
 ```
 

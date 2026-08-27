@@ -24,7 +24,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
-        "--config", default="configs/cot/prm_negative_human_review_v1.yaml"
+        "--config", default="configs/cot/prm_negative_human_review_v2.yaml"
     )
     parser.add_argument("--prepare-template-24", action="store_true")
     return parser.parse_args()
@@ -54,7 +54,7 @@ def main() -> None:
         raise RuntimeError("private blind-review Markdown case count changed")
     target = context["canary_dir"] / str(files["annotations"])
     preview = {
-        "schema_version": "medtrace.prm-negative-human-review-preview.v1",
+        "schema_version": "medtrace.prm-negative-human-review-preview.v2",
         "contains_private_text_or_ids": False,
         "cases": 24,
         "template_exists": target.exists(),

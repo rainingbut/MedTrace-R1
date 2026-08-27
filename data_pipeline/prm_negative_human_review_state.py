@@ -24,8 +24,8 @@ from data_pipeline.prm_negative_recovery_state import (
 from data_pipeline.run_cot_pilot_real import _load_jsonl
 
 
-ANNOTATION_SCHEMA = "medtrace.prm-negative-human-annotation.v1"
-LOCK_SCHEMA = "medtrace.prm-negative-human-annotation-lock.v1"
+ANNOTATION_SCHEMA = "medtrace.prm-negative-human-annotation.v2"
+LOCK_SCHEMA = "medtrace.prm-negative-human-annotation-lock.v2"
 
 
 def load_human_review_config(path: Path) -> dict[str, Any]:
@@ -105,6 +105,7 @@ def annotation_template(total: int) -> list[dict[str, Any]]:
             "case_number": case_number,
             "human_problem_status": None,
             "human_trajectory_label": None,
+            "human_error_type": None,
             "human_first_error_step": None,
             "notes": "",
         }
@@ -165,7 +166,7 @@ def validate_annotations(
     required_keys = {
         "schema_version", "record_type", "case_number",
         "human_problem_status", "human_trajectory_label",
-        "human_first_error_step", "notes",
+        "human_error_type", "human_first_error_step", "notes",
     }
     for candidate, record in zip(candidates, annotations, strict=True):
         if set(record) != required_keys:
@@ -178,20 +179,30 @@ def validate_annotations(
             raise ValueError("human annotation notes are invalid")
         status = record["human_problem_status"]
         label = record["human_trajectory_label"]
+        error_type = record["human_error_type"]
         first = record["human_first_error_step"]
-        if not require_complete and status is None and label is None and first is None:
+        if (
+            not require_complete and status is None and label is None
+            and error_type is None and first is None
+        ):
             continue
         if status not in {"ok", "ambiguous", "bad_gold"}:
             raise ValueError("human problem status is invalid")
         if status != "ok":
-            if label is not None or first is not None:
+            if label is not None or error_type is not None or first is not None:
                 raise ValueError("non-ok human cases must not have trajectory labels")
             continue
         if type(label) is not int or label not in {0, 1}:
             raise ValueError("ok human cases require a strict integer label")
         if label == 1:
+            if error_type is not None or first is not None:
+                raise ValueError("positive human cases must have null error fields")
+            continue
+        if error_type not in {"process", "answer_only"}:
+            raise ValueError("negative human cases require an error type")
+        if error_type == "answer_only":
             if first is not None:
-                raise ValueError("positive human cases must have null first error")
+                raise ValueError("answer-only negatives must have null first error")
             continue
         step_count = len(candidate["trajectory"]["steps"])
         if type(first) is not int or not 0 <= first < step_count:

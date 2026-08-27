@@ -28,7 +28,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
-        "--config", default="configs/cot/prm_negative_human_review_v1.yaml"
+        "--config", default="configs/cot/prm_negative_human_review_v2.yaml"
     )
     parser.add_argument("--score-locked-review-24", action="store_true")
     return parser.parse_args()
@@ -61,6 +61,8 @@ def score_review(
     trajectory_correct = 0
     first_error_total = 0
     first_error_correct = 0
+    human_answer_only_negative = 0
+    human_process_negative = 0
     candidates_out: list[dict[str, Any]] = []
     for case_number, (candidate, annotation) in enumerate(
         zip(context["source"]["candidates"], annotations, strict=True), start=1
@@ -74,27 +76,32 @@ def score_review(
         if human_status != "ok":
             continue
         human_label = int(annotation["human_trajectory_label"])
+        human_error_type = annotation["human_error_type"]
         validator_label = int(result["trajectory_label"])
         trajectory_total += 1
         trajectory_correct += int(human_label == validator_label)
         label_matrix[f"human:{human_label}|validator:{validator_label}"] += 1
         exact_first = False
-        if human_label == 0:
+        if human_label == 0 and human_error_type == "process":
+            human_process_negative += 1
             first_error_total += 1
             exact_first = (
                 result.get("first_error_step")
                 == annotation["human_first_error_step"]
             )
             first_error_correct += int(exact_first)
+        elif human_label == 0 and human_error_type == "answer_only":
+            human_answer_only_negative += 1
         if (
             human_label == 0
+            and human_error_type == "process"
             and disposition == "strict_process_negative"
             and exact_first
         ):
             candidates_out.append(
                 {
                     "schema_version": (
-                        "medtrace.prm-negative-human-approved-candidate.v1"
+                        "medtrace.prm-negative-human-approved-candidate.v2"
                     ),
                     "case_number": case_number,
                     "candidate_id": candidate_id,
@@ -129,13 +136,16 @@ def score_review(
         ),
     }
     report = {
-        "schema_version": "medtrace.prm-negative-human-review-audit.v1",
+        "schema_version": "medtrace.prm-negative-human-review-audit.v2",
         "contains_private_text_or_ids": False,
         "annotations": {
             "total": len(annotations),
             "problem_status": dict(sorted(problem_statuses.items())),
             "human_problem_ok": trajectory_total,
-            "human_negative_on_ok_problems": first_error_total,
+            "human_process_negatives_on_ok_problems": human_process_negative,
+            "human_answer_only_negatives_on_ok_problems": (
+                human_answer_only_negative
+            ),
         },
         "validator": {
             "canonical_dispositions": dict(sorted(validator_dispositions.items())),
@@ -157,7 +167,9 @@ def score_review(
         },
         "candidate_negative_list": {
             "records": len(candidates_out),
-            "policy": "human_ok_negative_and_validator_strict_negative_exact_first",
+            "policy": (
+                "human_ok_process_negative_and_validator_strict_negative_exact_first"
+            ),
             "contains_training_records": False,
         },
         "quality_gate": {
@@ -187,8 +199,10 @@ def render_markdown(report: dict[str, Any]) -> str:
             f"- Human problem status: "
             f"`{json.dumps(annotations['problem_status'], sort_keys=True)}`",
             f"- Human problem-ok cases: {annotations['human_problem_ok']}",
-            f"- Human negatives on ok problems: "
-            f"{annotations['human_negative_on_ok_problems']}",
+            f"- Human process negatives on ok problems: "
+            f"{annotations['human_process_negatives_on_ok_problems']}",
+            f"- Human answer-only negatives on ok problems: "
+            f"{annotations['human_answer_only_negatives_on_ok_problems']}",
             f"- Trajectory-label accuracy: "
             f"{scores['trajectory_label']['correct']}/"
             f"{scores['trajectory_label']['total']} = "

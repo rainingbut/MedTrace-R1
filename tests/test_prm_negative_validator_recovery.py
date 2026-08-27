@@ -37,7 +37,7 @@ from data_pipeline.run_prm_negative_validator_recovery import (
 
 ROOT = Path(__file__).resolve().parents[1]
 CONFIG_PATH = ROOT / "configs/cot/prm_negative_validator_recovery_v1.yaml"
-HUMAN_CONFIG_PATH = ROOT / "configs/cot/prm_negative_human_review_v1.yaml"
+HUMAN_CONFIG_PATH = ROOT / "configs/cot/prm_negative_human_review_v2.yaml"
 
 
 def validator_result(label: int, first: int | None = None) -> dict:
@@ -226,6 +226,9 @@ def create_human_annotations(root: Path) -> tuple[dict, dict, Path, dict]:
         result = context["canonical"][candidate["candidate_id"]]["result"]
         annotation["human_problem_status"] = "ok"
         annotation["human_trajectory_label"] = result["trajectory_label"]
+        annotation["human_error_type"] = (
+            "process" if result["trajectory_label"] == 0 else None
+        )
         annotation["human_first_error_step"] = result["first_error_step"]
     annotation_path = context["canary_dir"] / human_config["private_files"][
         "annotations"
@@ -352,6 +355,7 @@ class PrmNegativeValidatorRecoveryTests(unittest.TestCase):
             {
                 "human_problem_status": "ambiguous",
                 "human_trajectory_label": 0,
+                "human_error_type": "process",
                 "human_first_error_step": 1,
             }
         )
@@ -384,6 +388,23 @@ class PrmNegativeValidatorRecoveryTests(unittest.TestCase):
                 write_jsonl(annotation_path, records)
                 with self.assertRaisesRegex(RuntimeError, "lock"):
                     validate_annotation_lock(lock, annotation_path, context, metadata)
+
+    def test_answer_only_negative_requires_null_first_error(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            with patch(
+                "data_pipeline.prm_negative_recovery_state._source_hashes",
+                return_value={"pilot": "hash"},
+            ):
+                create_fixture(root)
+                _, context, annotation_path, _ = create_human_annotations(root)
+                records = _load_attempts(annotation_path)
+                records[1]["human_error_type"] = "answer_only"
+                records[1]["human_first_error_step"] = None
+                validate_annotations(records, context, require_complete=True)
+                records[1]["human_first_error_step"] = 1
+                with self.assertRaisesRegex(ValueError, "answer-only"):
+                    validate_annotations(records, context, require_complete=True)
 
     def test_human_review_scoring_passes_and_emits_only_candidate_metadata(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -420,6 +441,7 @@ class PrmNegativeValidatorRecoveryTests(unittest.TestCase):
                 records = _load_attempts(annotation_path)
                 for record in records[1:5]:
                     record["human_trajectory_label"] = 1
+                    record["human_error_type"] = None
                     record["human_first_error_step"] = None
                 write_jsonl(annotation_path, records)
                 metadata, _ = validate_annotations(
@@ -430,7 +452,7 @@ class PrmNegativeValidatorRecoveryTests(unittest.TestCase):
                     locked_at_utc="2026-08-27T12:02:00+08:00",
                 )
                 lock_path = context["canary_dir"] / (
-                    "human_review_annotations_v1.lock.json"
+                    "human_review_annotations_v2.lock.json"
                 )
                 lock_path.write_text(json.dumps(lock), encoding="utf-8")
                 report, _ = score_review(HUMAN_CONFIG_PATH, repo_root=root)
