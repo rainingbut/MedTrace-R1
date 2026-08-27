@@ -192,3 +192,7 @@ The completed canary produced 21 strict-contract results, 11 strict process
 negatives, and 3 unavailable responses. All three unavailable responses were
 OpenRouter HTTP 429 failures with no content. The approved isolated recovery
 commands are in `docs/STEP2_PRM_NEGATIVE_VALIDATOR_RECOVERY_RUNBOOK.md`.
+All three recovery requests later succeeded on their first attempt. The
+canonical audit reached 24/24 strict contracts and 12 strict process negatives;
+the remaining required gate is the structured blind human review documented in
+`docs/STEP2_PRM_NEGATIVE_HUMAN_REVIEW_RUNBOOK.md`.

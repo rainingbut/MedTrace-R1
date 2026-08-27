@@ -130,22 +130,15 @@ The audit uses original complete results unchanged and substitutes only a
 strict-contract-valid recovery for each original unavailable result. It never
 merges records into SFT or PRM training data.
 
-## 5. Private human-review key
+## 5. Structured human review
 
-Complete the existing private `human_review_blind.md` before generating or
-opening the recovered key. Then run:
-
-```bash
-python -m data_pipeline.review_prm_negative_validator_recovery \
-  --config configs/cot/prm_negative_validator_recovery_v1.yaml
-```
-
-This writes:
+The recovery passed with 24/24 canonical strict contracts and 12 strict process
+negatives. Complete and hash-lock the approved structured blind review before
+generating or opening the recovered key. Follow:
 
 ```text
-results/cot/pilot_v1_real/prm_negative_enrichment_v1/canary_v1/
-human_review_key_recovered.md
+docs/STEP2_PRM_NEGATIVE_HUMAN_REVIEW_RUNBOOK.md
 ```
 
-It intentionally does not overwrite `human_review_blind.md`. Both review files
-contain licensed private material and must not be committed or shared.
+The key command now fails closed unless the completed annotation file has a
+valid immutable lock. It never overwrites `human_review_blind.md`.

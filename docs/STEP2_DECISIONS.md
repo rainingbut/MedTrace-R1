@@ -107,3 +107,13 @@ of exactly those three events with the same validator v2 contract, at most two
 requests per event, 60/45/90-second throttling, a CNY 2 hard cap, and a CNY 1.8
 stop line. Recovery must not overwrite source events, generate candidates, use
 local GPU inference, merge training data, or expand scale.
+
+## Structured PRM human-review approval (2026-08-27)
+
+After the recovery, the canonical canary passed machine quality with 24/24
+strict contracts and 12 strict process negatives. The user approved an offline
+structured blind-review phase: a private 24-case annotation template, strict
+conditional field contracts, an immutable annotation/source/recovery hash lock,
+and aggregate scoring at 90% trajectory-label and 80% exact-first-error gates.
+Only a conservative candidate metadata list may be written after both gates
+pass. No model/API call, training record, merge, or scale expansion is allowed.

@@ -152,3 +152,13 @@ Canary 最低质量门槛：
 - 不生成新候选、不使用本地 GPU、不合并训练数据、不扩大规模。
 
 准确命令见 `docs/STEP2_PRM_NEGATIVE_VALIDATOR_RECOVERY_RUNBOOK.md`。
+
+### 5.4 结构化人工盲审
+
+3条 recovery 全部首次成功，规范结果达到24/24严格契约、12条严格过程负例，机器
+质量门通过。用户已批准纯离线人工盲审评分：24条结构化标注、盲审声明、标注/候选/
+原 validator/recovery 哈希锁，以及90%轨迹标签和80%首错位置门。评分仅在人工
+`problem_status=ok` 的题目上进行；首错分母进一步限定为人工负轨迹。
+
+双门通过时只能写出“人工有效负例候选元数据清单”，不得写训练记录或合并 PRM。
+准确命令见 `docs/STEP2_PRM_NEGATIVE_HUMAN_REVIEW_RUNBOOK.md`。
