@@ -1,0 +1,121 @@
+schema_version: medtrace.cot.step2-scaleup-plan.v1
+write_enabled: false
+approval_status: approved_offline_planning_2026-08-29
+
+source_run_dir: results/cot/pilot_v1_real
+source_files:
+  pilot_audit: quality_audit.json
+  teacher_events: teacher_events.jsonl
+  screener_events: screener_events.jsonl
+  validator_events: validator_events.jsonl
+  strict_sft: prm_negative_enrichment_v1/strict_source_v1/sft_verified.jsonl
+  canary_audit: prm_negative_enrichment_v1/canary_v1/quality_audit.json
+  canary_candidates: prm_negative_enrichment_v1/canary_v1/candidates.jsonl
+  canary_validator_events: prm_negative_enrichment_v1/canary_v1/validator_events.jsonl
+  student_generation_events: prm_negative_enrichment_v1/canary_v1/student_generation_events.jsonl
+  controlled_generation_events: prm_negative_enrichment_v1/canary_v1/controlled_mutation_events.jsonl
+  recovery_audit: prm_negative_enrichment_v1/canary_v1/validator_recovery_v1/quality_audit.json
+  recovery_attempts: prm_negative_enrichment_v1/canary_v1/validator_recovery_v1/recovery_attempts.jsonl
+  adjudication_audit: prm_negative_enrichment_v1/canary_v1/human_review_adjudication_audit_v1.json
+  materialization_audit: prm_negative_enrichment_v1/prm_negative_materialization_v1/audit.json
+
+frozen_identity:
+  pilot_questions: 40
+  candidates_per_question: 4
+  questions_per_benchmark:
+    medqa: 20
+    medmcqa: 20
+  strict_sft_trajectories: 107
+  strict_prm_trajectories: 108
+  strict_positive_prefix_records: 717
+  strict_negative_prefix_records: 4
+  current_negative_trajectories: 12
+  current_positive_prefix_records: 749
+  current_negative_prefix_records: 47
+  canary_candidates_per_origin:
+    existing_teacher_answer_mismatch: 8
+    local_student: 8
+    controlled_single_error: 8
+
+scenarios:
+  - name: checkpoint
+    new_questions: 1000
+    target_total_negative_trajectories: 200
+  - name: minimum
+    new_questions: 2500
+    target_total_negative_trajectories: 300
+  - name: recommended
+    new_questions: 2500
+    target_total_negative_trajectories: 500
+  - name: robust
+    new_questions: 5000
+    target_total_negative_trajectories: 1000
+recommended_scenario: recommended
+
+negative_planning:
+  guaranteed_origins:
+    controlled_single_error: 0.80
+    local_student: 0.20
+  opportunistic_origins:
+    - existing_teacher_answer_mismatch
+  yield_lower_bound_z: 1.281551565545
+  prm_positive_to_negative_ratio_target: 5.0
+  prm_positive_to_negative_ratio_bounds: [3.0, 8.0]
+  require_distinct_trajectories: true
+  balance_benchmarks: true
+
+dataset_split_policy:
+  grouping_unit: source_question
+  forbid_group_cross_split: true
+  evaluation_benchmark_records_forbidden: true
+  current_12_negatives_default_to_audit_holdout: true
+  sft_trajectory_split:
+    train: 0.95
+    validation: 0.05
+  prm_negative_trajectory_split:
+    train: 0.80
+    validation: 0.10
+    test: 0.10
+
+budget_policy:
+  estimate_safety_factor: 1.15
+  stop_line_factor: 1.25
+  hard_cap_factor: 1.40
+  round_cny_up_to: 1
+  observed_local_gpu_hourly_rate_cny: 2.5
+  observed_rate_provenance: docs/FULL_BASELINE_HANDOFF.md
+  require_rate_reconfirmation_before_paid_run: true
+  pilot_local_gpu_hours_cap: 1
+  negative_canary_local_gpu_hours_cap: 1
+
+paid_canary_proposal:
+  new_questions: 100
+  questions_per_benchmark:
+    medqa: 50
+    medmcqa: 50
+  negative_candidates:
+    controlled_single_error: 32
+    local_student: 8
+  quality_gates:
+    teacher_rule_pass_rate_minimum: 0.75
+    strict_sft_per_question_minimum: 2.0
+    validator_contract_success_rate_minimum: 0.98
+    controlled_exact_first_error_rate_minimum: 0.80
+    human_trajectory_label_accuracy_minimum: 0.90
+    human_exact_first_error_accuracy_minimum: 0.80
+    require_both_benchmarks: true
+    require_all_cost_ledgers_complete: true
+
+outputs:
+  aggregate_json: reports/step2_scaleup_budget_v1.json
+  aggregate_markdown: reports/step2_scaleup_budget_v1.md
+
+authorization:
+  offline_only: true
+  model_or_api_calls_authorized: false
+  gpu_inference_authorized: false
+  data_generation_authorized: false
+  training_authorized: false
+  git_push_authorized: false
+  paid_canary_authorized: false
+  full_scale_generation_authorized: false
